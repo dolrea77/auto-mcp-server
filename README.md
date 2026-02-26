@@ -1083,14 +1083,3 @@ tail -f logs/mcp-server.log
 - Type hints: `X | None` (not `Optional[X]`)
 
 ---
-
-## 📄 라이선스
-
-MIT License
-
----
-
-## 🙋 지원
-
-- 이슈 등록: GitHub Issues
-- 문서: [CLAUDE.md](./CLAUDE.md)
