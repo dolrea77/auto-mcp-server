@@ -55,7 +55,7 @@ def build_container() -> Container:
 
     # 새 컴포넌트: 템플릿 저장소 + 렌더러
     template_repo = YamlTemplateRepository(yaml_path=settings.template_yaml_path)
-    template_renderer = TemplateRenderer(template_repo=template_repo)
+    template_renderer = TemplateRenderer(template_repo=template_repo, author_name=settings.wiki_author_name)
 
     # 새 컴포넌트: Git diff 수집기 + 세션 저장소
     diff_collector = GitLocalAdapter()

@@ -16,7 +16,8 @@ Claude Desktop / Claude Code에서 사용할 수 있는 로컬 MCP(Model Context
    - [환경 변수 설정](#1-환경-변수-설정)
    - [Jira 계정 정보](#2-jira-계정-정보-설정)
    - [Confluence Wiki 설정](#3-confluence-wiki-설정-선택)
-   - [Wiki 템플릿 커스터마이징](#4-wiki-템플릿-커스터마이징-선택)
+   - [Wiki 작성자 이름 설정](#4-wiki-작성자-이름-설정-선택)
+   - [Wiki 템플릿 커스터마이징](#5-wiki-템플릿-커스터마이징-선택)
 3. [제공 기능](#-제공-기능)
    - [Jira 기능](#1-jira-기능)
    - [Wiki 생성 기능](#2-confluence-wiki-생성-기능) (멀티프로젝트 병합 포함)
@@ -118,6 +119,9 @@ WIKI_BASE_URL=https://your-confluence-server
 WIKI_ISSUE_SPACE_KEY=YOUR_SPACE
 WIKI_ISSUE_ROOT_PAGE_ID=YOUR_ROOT_PAGE_ID
 
+# Wiki 작성자 이름 (Wiki 페이지 제목에 표시, 선택)
+# WIKI_AUTHOR_NAME=홍길동
+
 # Git 저장소 매핑 (JSON 형식, 선택)
 # collect_branch_commits / analyze_branch_changes에서 repository_path 미지정 시 자동 탐지
 # GIT_REPOSITORIES={"project-a": "/path/to/project-a", "project-b": "/path/to/project-b"}
@@ -206,23 +210,38 @@ Confluence는 Jira와 동일한 계정을 사용합니다. (`USER_ID`, `USER_PAS
 - On-premise: Jira와 Confluence가 통합 계정을 사용하는 경우 추가 설정 불필요
 - Atlassian Cloud: 동일한 API 토큰 사용
 
-### 4. Wiki 템플릿 커스터마이징 (선택)
+### 4. Wiki 작성자 이름 설정 (선택)
+
+Wiki 페이지 제목에 표시할 작성자 이름을 설정합니다.
+
+```env
+WIKI_AUTHOR_NAME=홍길동
+```
+
+설정하면 Wiki 페이지 제목이 다음과 같이 생성됩니다:
+- 연도 페이지: `[홍길동] 2026`
+- 월 페이지: `[홍길동] 2026-02`
+
+미설정 시 제목에 작성자 이름이 빈 값으로 표시됩니다.
+
+### 5. Wiki 템플릿 커스터마이징 (선택)
 
 Wiki 페이지 생성 시 사용할 템플릿을 커스터마이징할 수 있습니다.
 
-#### 4.1 템플릿 파일 위치
+#### 5.1 템플릿 파일 위치
 
 ```
 config/wiki_templates.yaml
 ```
 
-#### 4.2 템플릿 구조
+#### 5.2 템플릿 구조
 
 ```yaml
 # 페이지 제목 형식
+# {{ AUTHOR_NAME }}은 환경변수 WIKI_AUTHOR_NAME에서 설정
 title_formats:
-  year: "[사용자명] {{ YEAR }}"
-  month: "[사용자명] {{ YEAR }}-{{ MONTH_PADDED }}"
+  year: "[{{ AUTHOR_NAME }}] {{ YEAR }}"
+  month: "[{{ AUTHOR_NAME }}] {{ YEAR }}-{{ MONTH_PADDED }}"
 
 # 워크플로우별 본문 템플릿
 workflows:
@@ -239,7 +258,13 @@ workflows:
       </table>
 ```
 
-#### 4.3 사용 가능한 변수
+#### 5.3 사용 가능한 변수
+
+**제목 형식 (title_formats):**
+- `{{ AUTHOR_NAME }}` - 작성자 이름 (환경변수 `WIKI_AUTHOR_NAME`)
+- `{{ YEAR }}` - 년도
+- `{{ MONTH }}` - 월
+- `{{ MONTH_PADDED }}` - 월 (2자리, 예: `02`)
 
 **Workflow A (Jira 이슈):**
 - `{{ ISSUE_KEY }}` - Jira 이슈 키
@@ -262,7 +287,7 @@ workflows:
 - `{{ CHANGE_SUMMARY_HTML }}` - 변경 내용 요약 (HTML)
 - `{{ JIRA_ISSUES_HTML }}` - 관련 Jira 이슈 테이블 (선택)
 
-#### 4.4 템플릿 리로드
+#### 5.4 템플릿 리로드
 
 템플릿을 수정한 후 서버 재시작 없이 반영하려면:
 
@@ -272,7 +297,7 @@ Claude에게: "Wiki 템플릿 리로드해줘"
 
 또는 `reload_wiki_templates` MCP 도구를 직접 호출합니다.
 
-### 5. Git 저장소 매핑 (선택)
+### 6. Git 저장소 매핑 (선택)
 
 `collect_branch_commits` / `analyze_branch_changes` 도구에서 `repository_path`를 지정하지 않으면
 `GIT_REPOSITORIES`에 등록된 저장소들을 자동 순회하여 브랜치를 탐지합니다.
@@ -281,7 +306,7 @@ Claude에게: "Wiki 템플릿 리로드해줘"
 GIT_REPOSITORIES={"oper-back-office": "/path/to/oper-back-office", "supplier-back-office": "/path/to/supplier-back-office"}
 ```
 
-### 6. Diff 최대 문자수 (선택)
+### 7. Diff 최대 문자수 (선택)
 
 `collect_branch_commits`의 `include_diff=true` 시 스마트 필터링 후 반환할 최대 Diff 크기입니다.
 

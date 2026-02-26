@@ -26,6 +26,7 @@ class Settings:
     wiki_issue_root_page_id: str
     template_yaml_path: str
     git_repositories: dict[str, str]  # {프로젝트명: git경로} 매핑
+    wiki_author_name: str  # Wiki 페이지 제목에 사용할 작성자 이름
     max_diff_chars: int  # include_diff=true 시 diff 최대 문자수
 
 
@@ -57,5 +58,6 @@ def build_settings() -> Settings:
         wiki_issue_root_page_id=os.getenv("WIKI_ISSUE_ROOT_PAGE_ID", ""),
         template_yaml_path=os.getenv("TEMPLATE_YAML_PATH", default_template_path),
         git_repositories=git_repositories,
+        wiki_author_name=os.getenv("WIKI_AUTHOR_NAME", ""),
         max_diff_chars=int(os.getenv("MAX_DIFF_CHARS", "30000")),
     )

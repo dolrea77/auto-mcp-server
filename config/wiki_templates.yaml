@@ -1,7 +1,8 @@
 # Wiki 페이지 제목 형식
+# {{ AUTHOR_NAME }}은 환경변수 WIKI_AUTHOR_NAME에서 설정
 title_formats:
-  year: "[YourName] {{ YEAR }}"
-  month: "[YourName] {{ YEAR }}-{{ MONTH_PADDED }}"
+  year: "[{{ AUTHOR_NAME }}] {{ YEAR }}"
+  month: "[{{ AUTHOR_NAME }}] {{ YEAR }}-{{ MONTH_PADDED }}"
 
 # 워크플로우별 본문 템플릿
 workflows:

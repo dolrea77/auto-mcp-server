@@ -33,8 +33,9 @@ class _ConfluenceRenderer(mistune.HTMLRenderer):
 class TemplateRenderer:
     """Jinja2 기반 템플릿 렌더러"""
 
-    def __init__(self, template_repo: TemplateRepositoryPort):
+    def __init__(self, template_repo: TemplateRepositoryPort, author_name: str = ""):
         self._repo = template_repo
+        self._author_name = author_name
         self._env = Environment(
             loader=BaseLoader(),
             undefined=LoggingUndefined,
@@ -61,7 +62,7 @@ class TemplateRenderer:
     def build_year_month_titles(self, year: int, month: int) -> tuple[str, str]:
         """년도/월 페이지 제목을 생성합니다."""
         title_formats = self._repo.get_title_formats()
-        vars_ = {"YEAR": str(year), "MONTH": str(month), "MONTH_PADDED": f"{month:02d}"}
+        vars_ = {"YEAR": str(year), "MONTH": str(month), "MONTH_PADDED": f"{month:02d}", "AUTHOR_NAME": self._author_name}
         year_title = self.render_title(title_formats.year_format, vars_)
         month_title = self.render_title(title_formats.month_format, vars_)
         return year_title, month_title
