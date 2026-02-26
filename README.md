@@ -34,6 +34,10 @@ Claude Desktop / Claude Code에서 사용할 수 있는 로컬 MCP(Model Context
 
 - Python 3.11 이상
 - [Miniconda](https://docs.conda.io/en/latest/miniconda.html) (권장) 또는 Python venv
+- **Git CLI** (시스템에 설치 필수)
+  - macOS/Linux: 일반적으로 기본 설치되어 있음 (확인: `git --version`)
+  - Windows: [Git for Windows](https://git-scm.com/download/win) 설치 필요
+  - 본 프로젝트는 Python 라이브러리가 아닌 시스템의 git 명령어를 직접 사용합니다
 
 ### 2. 설치
 
