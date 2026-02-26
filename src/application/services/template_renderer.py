@@ -29,6 +29,16 @@ class _ConfluenceRenderer(mistune.HTMLRenderer):
         target = min(max(level + 1, self._MIN_HEADING), self._MAX_HEADING)
         return f"<h{target}>{text}</h{target}>\n"
 
+    def block_code(self, code: str, info=None, **attrs) -> str:
+        language = info.strip() if info else "text"
+        safe_code = code.replace("]]>", "]]]]><![CDATA[>")
+        return (
+            f'<ac:structured-macro ac:name="code">\n'
+            f'  <ac:parameter ac:name="language">{language}</ac:parameter>\n'
+            f'  <ac:plain-text-body><![CDATA[{safe_code}]]></ac:plain-text-body>\n'
+            f'</ac:structured-macro>\n'
+        )
+
 
 class TemplateRenderer:
     """Jinja2 기반 템플릿 렌더러"""
@@ -44,6 +54,7 @@ class TemplateRenderer:
         )
         self._md = mistune.create_markdown(
             renderer=_ConfluenceRenderer(escape=True),
+            plugins=['table', 'strikethrough'],
         )
 
     def render_workflow_body(self, workflow_type: str, variables: dict[str, str]) -> str:
