@@ -1,0 +1,93 @@
+# Wiki 페이지 제목 형식
+title_formats:
+  year: "[YourName] {{ YEAR }}"
+  month: "[YourName] {{ YEAR }}-{{ MONTH_PADDED }}"
+
+# 워크플로우별 본문 템플릿
+workflows:
+  workflow_a:
+    description: "Jira 이슈 완료 처리 후 Wiki 생성"
+    body: |
+      <h2>이슈 정보</h2>
+      <table>
+        <tbody>
+          <tr><th>이슈키</th><td>{% if HAS_JIRA_DETAIL %}<a href="{{ JIRA_URL }}">{{ ISSUE_KEY }}</a>{% else %}{{ ISSUE_KEY }}{% endif %}</td></tr>
+          <tr><th>제목</th><td>{{ ISSUE_TITLE }}</td></tr>
+          <tr><th>담당자</th><td>{{ ASSIGNEE }}</td></tr>
+          <tr><th>완료일</th><td>{{ RESOLUTION_DATE }}</td></tr>
+          <tr><th>우선순위</th><td>{{ PRIORITY }}</td></tr>
+          {% if HAS_JIRA_DETAIL %}
+          <tr><th>상태</th><td>{{ JIRA_STATUS }}</td></tr>
+          <tr><th>유형</th><td>{{ JIRA_ISSUETYPE }}</td></tr>
+          {% if JIRA_WIKI_DATE %}<tr><th>기준일</th><td>{{ JIRA_WIKI_DATE }}</td></tr>{% endif %}
+          {% endif %}
+        </tbody>
+      </table>
+      {% if HAS_JIRA_DETAIL and JIRA_DESCRIPTION_HTML %}
+      <h2>이슈 설명</h2>
+      {{ JIRA_DESCRIPTION_HTML }}
+      {% endif %}
+      <h2>브랜치 및 커밋 내역</h2>
+      <table>
+        <tbody>
+          <tr><th>브랜치명</th><td>{{ BRANCH_NAME }}</td></tr>
+        </tbody>
+      </table>
+      <h2>커밋 요약</h2>
+      <ul>
+        {{ COMMIT_LIST }}
+      </ul>
+      {% if DIFF_STAT %}
+      <h2>변경 파일 목록</h2>
+      <ac:structured-macro ac:name="code">
+        <ac:parameter ac:name="language">text</ac:parameter>
+        <ac:plain-text-body><![CDATA[{{ DIFF_STAT }}]]></ac:plain-text-body>
+      </ac:structured-macro>
+      {% endif %}
+      <h2>변경 내용 요약</h2>
+      {{ CHANGE_SUMMARY_HTML }}
+
+  workflow_b:
+    description: "브랜치/커밋 직접 입력 Wiki 생성"
+    body: |
+      {% if HAS_JIRA_ISSUES %}
+      <h2>관련 Jira 이슈</h2>
+      <table>
+        <thead>
+          <tr><th>이슈키</th><th>제목</th><th>상태</th><th>담당자</th><th>유형</th><th>기준일</th></tr>
+        </thead>
+        <tbody>
+          {{ JIRA_ISSUES_HTML }}
+        </tbody>
+      </table>
+      {% if JIRA_DESCRIPTION_HTML %}
+      <h3>이슈 설명</h3>
+      {{ JIRA_DESCRIPTION_HTML }}
+      {% endif %}
+      {% endif %}
+      <h2>브랜치 / 커밋 정보</h2>
+      <table>
+        <tbody>
+          <tr><th>입력 타입</th><td>{{ INPUT_TYPE }}</td></tr>
+          <tr><th>값</th><td>{{ INPUT_VALUE }}</td></tr>
+          <tr><th>기준 날짜</th><td>{{ BASE_DATE }}</td></tr>
+        </tbody>
+      </table>
+      <h2>커밋 요약</h2>
+      <ul>
+        {{ COMMIT_LIST }}
+      </ul>
+      {% if DIFF_STAT %}
+      <h2>변경 파일 목록</h2>
+      <ac:structured-macro ac:name="code">
+        <ac:parameter ac:name="language">text</ac:parameter>
+        <ac:plain-text-body><![CDATA[{{ DIFF_STAT }}]]></ac:plain-text-body>
+      </ac:structured-macro>
+      {% endif %}
+      <h2>변경 내용 요약</h2>
+      {{ CHANGE_SUMMARY_HTML }}
+
+  workflow_c:
+    description: "특정 부모 페이지 아래 자유 형식 Wiki 생성"
+    body: |
+      {{ CONTENT_HTML }}
