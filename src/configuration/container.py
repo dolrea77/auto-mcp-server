@@ -35,6 +35,7 @@ class Container:
     reload_templates_use_case: ReloadTemplatesUseCase
     template_renderer: TemplateRenderer
     diff_collector: GitLocalAdapter
+    wiki_adapter: WikiAdapter
 
 
 @lru_cache(maxsize=1)
@@ -133,6 +134,7 @@ def build_container() -> Container:
         reload_templates_use_case=reload_templates_use_case,
         template_renderer=template_renderer,
         diff_collector=diff_collector,
+        wiki_adapter=wiki_adapter,
     )
 
 

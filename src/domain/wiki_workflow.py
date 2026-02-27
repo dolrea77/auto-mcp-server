@@ -42,6 +42,7 @@ class WorkflowType(Enum):
     WORKFLOW_A = "workflow_a"
     WORKFLOW_B = "workflow_b"
     WORKFLOW_C = "workflow_c"
+    UPDATE_PAGE = "update_page"
 
 
 class WorkflowState(Enum):
@@ -85,6 +86,10 @@ class WikiSession:
 
     # Project identification (멀티프로젝트 append용)
     project_name: str = ""
+
+    # Update workflow specific
+    update_target_page_id: str = ""    # 수정 대상 페이지 ID
+    update_target_version: int = 0     # 조회 시점의 페이지 버전
 
     # Shared data
     branch_name: str = ""

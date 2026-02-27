@@ -65,6 +65,17 @@ def _check_wiki_settings(settings) -> list[TextContent] | None:
     return None
 
 
+def _check_wiki_base_url(settings) -> list[TextContent] | None:
+    """Wiki 기본 URL 검증. 조회/수정은 root_page_id 불필요."""
+    if not settings.wiki_base_url:
+        return [TextContent(
+            type="text",
+            text="# ⚠️ Wiki 설정이 필요합니다\n\n"
+                 "환경 변수 `WIKI_BASE_URL`을 설정해주세요."
+        )]
+    return None
+
+
 async def _detect_repository(
     branch_name: str, git_repos: dict[str, str],
 ) -> tuple[str, str] | None:
@@ -251,7 +262,7 @@ def register_tools(app: Server) -> None:
     """MCP Tool 핸들러를 서버에 등록합니다."""
 
     # 로그에서 마스킹할 민감 필드 (값이 긴 텍스트이거나 토큰/비밀정보)
-    _SENSITIVE_FIELDS = {"approval_token", "commit_list", "change_summary", "content", "jql"}
+    _SENSITIVE_FIELDS = {"approval_token", "commit_list", "change_summary", "content", "jql", "body"}
     _TRUNCATE_FIELDS = {"repository_path"}  # 경로는 축약 표시
 
     def _mask_arguments(arguments: dict) -> dict:
@@ -844,6 +855,95 @@ def register_tools(app: Server) -> None:
 
                 return [TextContent(type="text", text=formatted_text)]
 
+            if name == "get_wiki_page":
+                page_id = arguments.get("page_id", "").strip()
+                page_title = arguments.get("page_title", "").strip()
+                space_key = arguments.get("space_key", "").strip()
+
+                if not page_id and not page_title:
+                    raise ValueError("page_id 또는 page_title 중 하나를 지정해야 합니다")
+
+                wiki_error = _check_wiki_base_url(container.settings)
+                if wiki_error:
+                    return wiki_error
+
+                adapter = container.wiki_adapter
+
+                if page_id:
+                    page = await adapter.get_page_with_content(page_id)
+                else:
+                    resolved_space = space_key or container.settings.wiki_issue_space_key
+                    found = await adapter.search_page_by_title(
+                        title=page_title,
+                        space_key=resolved_space,
+                    )
+                    if found is None:
+                        return [TextContent(
+                            type="text",
+                            text=f"# ⚠️ 페이지를 찾을 수 없습니다\n\n"
+                                 f"**검색 제목:** {page_title}\n"
+                                 f"**Space:** {resolved_space}\n\n"
+                                 f"해당 제목의 페이지가 존재하지 않거나 접근 권한이 없습니다."
+                        )]
+                    page = await adapter.get_page_with_content(found.id)
+
+                logger.info("✅ Tool 실행 완료: Wiki 페이지 조회 (id=%s, title=%s)", page.id, page.title)
+
+                formatted_text = "# Wiki 페이지 조회 결과\n\n"
+                formatted_text += "| 항목 | 내용 |\n"
+                formatted_text += "|------|------|\n"
+                formatted_text += f"| **페이지 ID** | {page.id} |\n"
+                formatted_text += f"| **제목** | {page.title} |\n"
+                formatted_text += f"| **Space** | {page.space_key} |\n"
+                formatted_text += f"| **URL** | {page.url} |\n"
+                formatted_text += f"| **버전** | {page.version} |\n"
+                formatted_text += f"\n### 페이지 내용 (Confluence Storage Format)\n\n{page.body}\n"
+
+                return [TextContent(type="text", text=formatted_text)]
+
+            if name == "update_wiki_page":
+                page_id = arguments.get("page_id", "").strip()
+                page_title = arguments.get("page_title", "").strip()
+                body = arguments.get("body", "").strip()
+                space_key = arguments.get("space_key", "").strip()
+
+                if not page_id and not page_title:
+                    raise ValueError("page_id 또는 page_title 중 하나를 지정해야 합니다")
+                if not body:
+                    raise ValueError("body 파라미터가 필요합니다")
+
+                wiki_error = _check_wiki_base_url(container.settings)
+                if wiki_error:
+                    return wiki_error
+
+                session = await container.wiki_orchestrator.start_update_workflow(
+                    body=body,
+                    page_id=page_id,
+                    page_title=page_title,
+                    space_key=space_key,
+                )
+                logger.info(
+                    "Tool 실행 완료: Wiki 페이지 수정 세션 시작 (session=%s, page=%s)",
+                    session.session_id, session.update_target_page_id,
+                )
+
+                formatted_text = "# Wiki 페이지 수정 프리뷰\n\n"
+                formatted_text += _PREVIEW_WARNING
+                formatted_text += "| 항목 | 내용 |\n"
+                formatted_text += "|------|------|\n"
+                formatted_text += f"| **페이지 ID** | {session.update_target_page_id} |\n"
+                formatted_text += f"| **제목** | {session.page_title} |\n"
+                formatted_text += f"| **현재 버전** | {session.update_target_version} |\n"
+                formatted_text += f"| **세션 ID** | {session.session_id} |\n"
+                formatted_text += f"| **현재 상태** | {session.state.value} (승인 대기 중) |\n"
+
+                content_preview = session.content_raw[:2000] if session.content_raw else ""
+                truncated = "..." if len(session.content_raw) > 2000 else ""
+                formatted_text += f"\n### 수정될 내용 프리뷰\n\n{content_preview}{truncated}\n\n---\n"
+                formatted_text += _format_approval_instructions(session)
+
+                return [TextContent(type="text", text=formatted_text)]
+
             if name == "create_wiki_custom_page":
                 parent_page_id = arguments.get("parent_page_id", "").strip()
                 parent_page_title = arguments.get("parent_page_title", "").strip()
@@ -978,8 +1078,14 @@ def register_tools(app: Server) -> None:
                 if not approval_token:
                     raise ValueError("approval_token 파라미터가 필요합니다")
 
-                # Wiki 설정 확인
-                wiki_error = _check_wiki_settings(container.settings)
+                # 세션 워크플로우 유형에 따라 Wiki 설정 검증 수준 결정
+                status = container.wiki_orchestrator.get_status(session_id)
+                is_update = status and status["workflow_type"] == "update_page"
+
+                if is_update:
+                    wiki_error = _check_wiki_base_url(container.settings)
+                else:
+                    wiki_error = _check_wiki_settings(container.settings)
                 if wiki_error:
                     return wiki_error
 
@@ -987,9 +1093,11 @@ def register_tools(app: Server) -> None:
                     session_id=session_id,
                     approval_token=approval_token,
                 )
-                logger.info("Tool 실행 완료: Wiki 페이지 생성 승인 완료 (%s)", result.url)
+                logger.info("Tool 실행 완료: Wiki 페이지 승인 완료 (%s)", result.url)
 
-                if result.was_updated:
+                if is_update:
+                    formatted_text = "# Wiki 페이지 수정 완료\n\n"
+                elif result.was_updated:
                     formatted_text = "# Wiki 페이지 업데이트 완료 (기존 페이지에 프로젝트 섹션 추가)\n\n"
                 else:
                     formatted_text = "# Wiki 페이지 생성 완료 (승인)\n\n"
@@ -998,7 +1106,9 @@ def register_tools(app: Server) -> None:
                 formatted_text += f"| **페이지 제목** | {result.title} |\n"
                 formatted_text += f"| **페이지 ID** | {result.page_id} |\n"
                 formatted_text += f"| **페이지 URL** | {result.url} |\n"
-                if result.was_updated:
+                if is_update:
+                    formatted_text += f"| **동작** | 페이지 내용 수정 |\n"
+                elif result.was_updated:
                     formatted_text += f"| **동작** | 기존 페이지에 프로젝트 섹션 추가 (업데이트) |\n"
 
                 return [TextContent(type="text", text=formatted_text)]
@@ -1613,6 +1723,94 @@ git log --oneline --no-merges main..{브랜치명}
                         },
                     },
                     "required": ["page_title", "content"],
+                },
+            ),
+            Tool(
+                name="get_wiki_page",
+                description="""Confluence Wiki 페이지를 조회하여 내용을 반환합니다.
+
+페이지 ID 또는 페이지 제목으로 특정 Wiki 페이지의 내용을 조회합니다.
+페이지 본문은 Confluence Storage Format (HTML)으로 반환됩니다.
+
+**사용 예시:**
+- "A 페이지 내용이 뭐야?" → page_title 사용
+- "페이지 ID 339090255 내용 알려줘" → page_id 사용
+
+**입력:**
+- page_id 또는 page_title 중 하나 필수 (둘 다 지정 시 page_id 우선)
+- space_key: Space 키 (page_title 검색 시 사용, 생략 시 기본값)
+
+**응답 정보:**
+- 페이지 ID, 제목, Space, URL, 버전
+- 페이지 본문 (Confluence Storage Format HTML)""",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "page_id": {
+                            "type": "string",
+                            "description": "Confluence 페이지 ID (예: '339090255'). page_title과 둘 중 하나만 지정하면 됩니다",
+                        },
+                        "page_title": {
+                            "type": "string",
+                            "description": "페이지 제목 (예: '회의록'). Space 내에서 정확한 제목으로 검색합니다. page_id와 둘 중 하나만 지정하면 됩니다",
+                        },
+                        "space_key": {
+                            "type": "string",
+                            "description": "Confluence Space 키 (page_title 검색 시 사용, 생략 시 WIKI_ISSUE_SPACE_KEY 기본값)",
+                        },
+                    },
+                },
+            ),
+            Tool(
+                name="update_wiki_page",
+                description="""기존 Confluence Wiki 페이지의 내용을 수정합니다. (2단계 승인 프로세스)
+
+페이지 ID 또는 제목으로 대상을 식별하고, 새 본문으로 교체합니다.
+승인 전까지 실제 수정은 적용되지 않습니다.
+
+⚠️ **에이전트 주의사항:**
+- 수정 전 반드시 get_wiki_page로 현재 내용을 확인하세요
+- 사용자에게 변경 내용을 설명하고 승인을 받은 후에만 이 도구를 호출하세요
+- 이 도구는 프리뷰만 생성합니다. 실제 수정은 approve_wiki_generation으로 승인해야 적용됩니다
+
+**워크플로우:**
+1. 이 도구 호출 → 프리뷰 + 승인 토큰 반환
+2. 사용자에게 프리뷰 보여주기
+3. 사용자 승인 시 approve_wiki_generation 호출 → 실제 수정 적용
+
+**사용 예시:**
+- "A 페이지에 새 내용 추가해줘" → get_wiki_page로 조회 → HTML 수정 → 이 도구로 수정 요청
+- "A 페이지에서 특정 내용 삭제해줘" → get_wiki_page로 조회 → HTML에서 삭제 → 이 도구로 수정 요청
+
+**입력:**
+- page_id 또는 page_title 중 하나 필수
+- body: 수정된 전체 페이지 본문 (Confluence Storage Format HTML)
+- space_key: Space 키 (page_title 검색 시 사용, 생략 시 기본값)
+
+**응답 정보:**
+- 세션 ID, 승인 토큰, 수정 프리뷰
+- 승인 방법 안내""",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "page_id": {
+                            "type": "string",
+                            "description": "수정할 페이지 ID (예: '339090255'). page_title과 둘 중 하나만 지정하면 됩니다",
+                        },
+                        "page_title": {
+                            "type": "string",
+                            "description": "수정할 페이지 제목. Space 내에서 정확한 제목으로 검색합니다. page_id와 둘 중 하나만 지정하면 됩니다",
+                        },
+                        "body": {
+                            "type": "string",
+                            "description": "수정된 전체 페이지 본문 (Confluence Storage Format HTML). get_wiki_page로 조회한 내용을 수정한 결과",
+                        },
+                        "space_key": {
+                            "type": "string",
+                            "description": "Confluence Space 키 (page_title 검색 시 사용, 생략 시 WIKI_ISSUE_SPACE_KEY 기본값)",
+                        },
+                    },
+                    "required": ["body"],
                 },
             ),
             Tool(

@@ -4,7 +4,8 @@ Claude Desktop / Claude Code에서 사용할 수 있는 로컬 MCP(Model Context
 
 **제공 기능:**
 - ✅ Jira 이슈 조회/관리 (조회, 상태 전환, 완료 처리, 필터 생성)
-- ✅ Confluence Wiki 페이지 자동 생성 (Jira 이슈 정리, 브랜치 커밋 기록, 자유 형식 커스텀 페이지, 멀티프로젝트 병합)
+- ✅ Wiki 페이지 자동 생성 (Jira 이슈 정리, 브랜치 커밋 기록, 자유 형식 커스텀 페이지, 멀티프로젝트 병합)
+- ✅ Wiki 페이지 조회/수정 (페이지 ID 또는 제목으로 조회, 내용 추가/삭제/수정)
 - ✅ Git 브랜치 커밋 수집 및 변경사항 분석 (베이스 브랜치 자동 탐지, 스마트 Diff 필터링)
 
 ---
@@ -15,12 +16,12 @@ Claude Desktop / Claude Code에서 사용할 수 있는 로컬 MCP(Model Context
 2. [초기 설정 가이드](#-초기-설정-가이드)
    - [환경 변수 설정](#1-환경-변수-설정)
    - [Jira 계정 정보](#2-jira-계정-정보-설정)
-   - [Confluence Wiki 설정](#3-confluence-wiki-설정-선택)
-   - [Wiki 작성자 이름 설정](#4-wiki-작성자-이름-설정-선택)
-   - [Wiki 템플릿 커스터마이징](#5-wiki-템플릿-커스터마이징-선택)
+   - [Wiki 설정](#3-confluence-wiki-설정-선택)
+   - [Wiki 작성자 이름 설정](#4-confluence-wiki-작성자-이름-설정-선택)
+   - [Wiki 템플릿 커스터마이징](#5-confluence-wiki-템플릿-커스터마이징-선택)
 3. [제공 기능](#-제공-기능)
    - [Jira 기능](#1-jira-기능)
-   - [Wiki 생성 기능](#2-confluence-wiki-생성-기능) (멀티프로젝트 병합 포함)
+   - [Wiki 생성 기능](#2-confluence-wiki-생성-기능) (멀티프로젝트 병합, 페이지 조회/수정 포함)
    - [Git 커밋 수집 및 분석](#3-git-커밋-수집-및-분석)
 4. [Claude Desktop/Code 연동](#-claude-desktopcode-연동)
 5. [사용 예시](#-사용-예시)
@@ -170,7 +171,7 @@ USER_ID=your_username@mycompany.com
 USER_PASSWORD=ATBBxxx...xxx  # API 토큰
 ```
 
-### 3. Confluence Wiki 설정
+### 3. Wiki 설정
 
 Wiki 페이지 자동 생성 기능을 사용하려면 다음 설정이 필요합니다.
 
@@ -182,7 +183,7 @@ WIKI_BASE_URL=https://confluence.mycompany.com
 
 #### 3.2 Space Key 확인
 
-Confluence에서 Wiki 페이지를 생성할 Space의 Key를 확인합니다.
+Wiki 페이지를 생성할 Space의 Key를 확인합니다.
 
 **확인 방법:**
 1. Confluence 웹에서 원하는 Space로 이동
@@ -332,10 +333,12 @@ MAX_DIFF_CHARS=30000  # 기본값
 | | `complete_jira_issue` | 이슈 완료 처리 (상태 전환 + 종료일 설정) |
 | | `transition_jira_issue` | 이슈 상태 전환 (임의 상태로) |
 | | `create_jira_filter` | JQL 기반 필터 생성 |
-| **Wiki** | `create_wiki_issue_page` | Jira 이슈 정리 Wiki 페이지 생성 (워크플로우 A) |
+| **Wiki** | `get_wiki_page` | Wiki 페이지 조회 (페이지 ID 또는 제목으로) |
+| | `update_wiki_page` | Wiki 페이지 수정 (2단계 승인 프로세스) |
+| | `create_wiki_issue_page` | Jira 이슈 정리 Wiki 페이지 생성 (워크플로우 A) |
 | | `create_wiki_page_with_content` | 브랜치/커밋 기반 Wiki 페이지 생성 (워크플로우 B) |
 | | `create_wiki_custom_page` | 자유 형식 커스텀 Wiki 페이지 생성 (워크플로우 C) |
-| | `approve_wiki_generation` | Wiki 생성 승인 (실제 페이지 생성) |
+| | `approve_wiki_generation` | Wiki 생성/수정 승인 (실제 페이지 생성 또는 수정) |
 | | `get_wiki_generation_status` | Wiki 생성 세션 상태 조회 |
 | | `reload_wiki_templates` | Wiki 템플릿 핫 리로드 |
 | **Git** | `collect_branch_commits` | 브랜치 커밋 수집 (Wiki 생성용) |
@@ -451,21 +454,23 @@ jql: "assignee = currentUser() AND status = '진행중(개발)'"
 
 ---
 
-### 2. Confluence Wiki 생성 기능
+### 2. Wiki 생성/조회/수정 기능
 
 #### 🔴 중요: 2단계 승인 프로세스
 
-**모든 Wiki 생성은 반드시 사용자 승인이 필요합니다!**
+**모든 Wiki 생성 및 수정은 반드시 사용자 승인이 필요합니다!**
 
-1. **준비 단계**: `create_wiki_issue_page` 또는 `create_wiki_page_with_content` 호출
-   - 즉시 생성되지 않음
+1. **준비 단계**: `create_wiki_issue_page`, `create_wiki_page_with_content`, 또는 `update_wiki_page` 호출
+   - 즉시 생성/수정되지 않음
    - 프리뷰 + 승인 토큰 반환
    - 상태: `WAIT_APPROVAL`
 
 2. **승인 단계**: `approve_wiki_generation` 호출
-   - 세션 ID + 승인 토큰 일치 시에만 생성
-   - 실제 Confluence Wiki 페이지 생성
+   - 세션 ID + 승인 토큰 일치 시에만 생성/수정
+   - 실제 Wiki 페이지 생성 또는 수정
    - 상태: `DONE`
+
+> **참고:** 페이지 **조회** (`get_wiki_page`)는 승인 없이 즉시 결과를 반환합니다.
 
 ---
 
@@ -487,7 +492,7 @@ Claude에게: "BNFDEV-1234 Wiki 이슈 정리 페이지 만들어줘"
 - `assignee`: 담당자 (기본값: "미지정")
 - `resolution_date`: 완료일 (YYYY-MM-DD, 기본값: 오늘)
 - `priority`: 우선순위 (기본값: "보통")
-- `project_name`: 프로젝트명 (예: `oper-back-office`). 동일 이슈 페이지가 이미 존재하면 프로젝트별 섹션으로 추가됩니다. 생략 시 기존처럼 동작 (중복 페이지 에러). 자세한 내용은 [멀티프로젝트 Wiki 병합](#26-멀티프로젝트-wiki-병합) 참조
+- `project_name`: 프로젝트명 (예: `oper-back-office`). 동일 이슈 페이지가 이미 존재하면 프로젝트별 섹션으로 추가됩니다. 생략 시 기존처럼 동작 (중복 페이지 에러). 자세한 내용은 [멀티프로젝트 Wiki 병합](#28-멀티프로젝트-wiki-병합) 참조
 
 **프로세스:**
 1. 프리뷰 생성 → 승인 대기
@@ -518,7 +523,7 @@ Claude에게: "dev_rf 브랜치 커밋 목록으로 Wiki 페이지 만들어줘"
 - `jira_issue_keys`: 관련 Jira 이슈 키 (콤마 구분, 예: `BNFDEV-1234,BNFMT-567`)
   - 포함 시 Jira 이슈 내용이 Wiki에 추가됨
   - 프로젝트별 날짜 기준 자동 적용 (BNFDEV: 종료일, BNFMT: 생성일)
-- `project_name`: 프로젝트명 (예: `oper-back-office`). 동일 제목의 페이지가 이미 존재하면 프로젝트별 섹션으로 추가됩니다. 생략 시 기존처럼 동작 (중복 페이지 에러). 자세한 내용은 [멀티프로젝트 Wiki 병합](#26-멀티프로젝트-wiki-병합) 참조
+- `project_name`: 프로젝트명 (예: `oper-back-office`). 동일 제목의 페이지가 이미 존재하면 프로젝트별 섹션으로 추가됩니다. 생략 시 기존처럼 동작 (중복 페이지 에러). 자세한 내용은 [멀티프로젝트 Wiki 병합](#28-멀티프로젝트-wiki-병합) 참조
 
 **프로세스:**
 1. 프리뷰 생성 → 승인 대기
@@ -552,7 +557,61 @@ Claude에게: "'AI' 페이지 아래에 기술 문서 작성해줘"
 
 ---
 
-#### 2.4 Wiki 생성 승인 (`approve_wiki_generation`)
+#### 2.4 Wiki 페이지 조회 (`get_wiki_page`)
+
+페이지 ID 또는 제목으로 Wiki 페이지를 조회합니다. 승인 없이 즉시 결과를 반환합니다.
+
+```
+Claude에게: "AI Wiki 페이지 내용 보여줘"
+Claude에게: "페이지 ID 339090255 내용 조회해줘"
+```
+
+**파라미터:**
+- `page_id` (선택): 페이지 ID (직접 조회)
+- `page_title` (선택): 페이지 제목 (Space 내 검색)
+- `space_key` (선택): Confluence Space 키 (생략 시 `WIKI_ISSUE_SPACE_KEY` 기본값)
+
+> `page_id`와 `page_title` 중 최소 하나 필수. 둘 다 제공 시 `page_id` 우선.
+
+**응답:**
+- 페이지 ID, 제목, Space, URL, 버전
+- 페이지 본문 (Confluence Storage Format HTML)
+
+---
+
+#### 2.5 Wiki 페이지 수정 (`update_wiki_page`)
+
+기존 Wiki 페이지의 내용을 수정합니다. 2단계 승인 프로세스가 적용됩니다.
+
+```
+Claude에게: "AI 페이지에 새 내용 추가해줘"
+Claude에게: "339090255 페이지에서 불필요한 섹션 삭제해줘"
+```
+
+**파라미터:**
+- `page_id` (선택): 수정할 페이지 ID
+- `page_title` (선택): 수정할 페이지 제목
+- `body` (필수): 수정된 전체 페이지 본문 (Confluence Storage Format HTML)
+- `space_key` (선택): Confluence Space 키
+
+> `page_id`와 `page_title` 중 최소 하나 필수. 둘 다 제공 시 `page_id` 우선.
+
+**프로세스:**
+1. 현재 페이지 조회 → 버전 캡처
+2. 프리뷰 생성 → 승인 대기 (`WAIT_APPROVAL`)
+3. 사용자 확인
+4. `approve_wiki_generation(session_id, approval_token)` 호출
+5. 실제 페이지 수정 (Optimistic Locking: 버전 충돌 시 자동 재시도 최대 3회)
+
+**일반적인 사용 흐름:**
+1. `get_wiki_page`로 현재 페이지 내용 조회
+2. Claude가 HTML 내용을 분석하여 수정 사항 반영
+3. `update_wiki_page`로 수정된 HTML 전달 → 프리뷰 확인
+4. 승인 후 실제 수정 적용
+
+---
+
+#### 2.6 Wiki 생성/수정 승인 (`approve_wiki_generation`)
 
 ```
 Claude에게: "Wiki 생성 승인해줘"
@@ -563,13 +622,14 @@ Claude에게: "Wiki 생성 승인해줘"
 - `approval_token`: 승인 토큰
 
 **응답:**
-- 생성된 페이지 제목, ID, URL
+- 생성/수정된 페이지 제목, ID, URL
 - **새 페이지 생성** 시: "Wiki 페이지 생성 완료 (승인)"
+- **기존 페이지 수정** 시: "Wiki 페이지 수정 완료 (승인)"
 - **기존 페이지에 프로젝트 섹션 추가** 시: "Wiki 페이지 업데이트 완료 (기존 페이지에 프로젝트 섹션 추가)"
 
 ---
 
-#### 2.5 Wiki 생성 상태 조회 (`get_wiki_generation_status`)
+#### 2.7 Wiki 생성 상태 조회 (`get_wiki_generation_status`)
 
 ```
 Claude에게: "Wiki 생성 세션 상태 확인해줘"
@@ -584,7 +644,7 @@ Claude에게: "Wiki 생성 세션 상태 확인해줘"
 
 ---
 
-#### 2.6 멀티프로젝트 Wiki 병합
+#### 2.8 멀티프로젝트 Wiki 병합
 
 하나의 Jira 이슈가 여러 프로젝트(예: `oper-back-office`, `supplier-back-office`)에 걸쳐 수정될 때, 각 프로젝트의 변경사항을 **하나의 Wiki 페이지에 통합**할 수 있습니다.
 
@@ -877,7 +937,41 @@ Claude: "15개 커밋, 8개 파일 변경. 주요 변경사항: ..."
 
 ---
 
-### 예시 6: 멀티프로젝트 Wiki 병합
+### 예시 6: Wiki 페이지 조회
+
+```
+사용자: "AI Wiki 페이지 내용 보여줘"
+→ get_wiki_page(page_title="AI") 호출
+
+Claude: "페이지 내용을 조회했습니다:
+- 페이지 ID: 339090255
+- 제목: AI
+- 버전: 12
+- 본문: (HTML 내용을 파싱하여 정리해서 보여줌)"
+```
+
+---
+
+### 예시 7: Wiki 페이지 수정 (내용 추가)
+
+```
+사용자: "AI 페이지에 새 섹션 추가해줘"
+
+→ get_wiki_page(page_title="AI") 호출 (현재 내용 조회)
+→ Claude가 기존 HTML에 새 섹션 추가하여 수정된 HTML 작성
+→ update_wiki_page(page_title="AI", body=수정된HTML) 호출
+
+Claude: "수정 프리뷰를 확인해주세요. 승인할까요?"
+
+사용자: "yes"
+→ approve_wiki_generation(session_id, approval_token) 호출
+
+Claude: "Wiki 페이지 수정 완료: https://confluence.../..."
+```
+
+---
+
+### 예시 8: 멀티프로젝트 Wiki 병합
 
 하나의 Jira 이슈(BNFDEV-1234)가 `oper-back-office`와 `supplier-back-office` 두 프로젝트에 걸쳐 수정된 경우:
 

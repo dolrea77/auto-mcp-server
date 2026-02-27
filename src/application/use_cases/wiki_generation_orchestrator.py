@@ -218,6 +218,49 @@ class WikiGenerationOrchestrator:
         self._sessions.save(session)
         return session
 
+    # ── Update workflow entry point ──
+
+    async def start_update_workflow(
+        self,
+        body: str,
+        page_id: str = "",
+        page_title: str = "",
+        space_key: str = "",
+    ) -> WikiSession:
+        """기존 Wiki 페이지 수정 워크플로우 시작: 프리뷰 생성 후 승인 대기"""
+        resolved_space_key = space_key or self._space_key
+
+        # 페이지 식별
+        if page_id:
+            page = await self._wiki.get_page_with_content(page_id)
+        elif page_title:
+            found = await self._wiki.search_page_by_title(
+                title=page_title,
+                space_key=resolved_space_key,
+            )
+            if found is None:
+                raise RuntimeError(
+                    f"페이지를 찾을 수 없습니다: '{page_title}' "
+                    f"(space: {resolved_space_key})"
+                )
+            page = await self._wiki.get_page_with_content(found.id)
+        else:
+            raise RuntimeError("page_id 또는 page_title 중 하나를 지정해야 합니다")
+
+        session = WikiSession(
+            workflow_type=WorkflowType.UPDATE_PAGE,
+            page_title=page.title,
+            content_raw=body,
+            custom_space_key=page.space_key or resolved_space_key,
+            update_target_page_id=page.id,
+            update_target_version=page.version,
+        )
+
+        self._transition(session, WorkflowState.RENDER_PREVIEW)
+        self._render_preview(session)
+        self._sessions.save(session)
+        return session
+
     # ── Approval ──
 
     async def approve(self, session_id: str, approval_token: str) -> WikiPageCreationResult:
@@ -295,6 +338,14 @@ class WikiGenerationOrchestrator:
         jira_issues_html = self._build_jira_issues_html(session.jira_issues)
         jira_description_html = self._build_jira_description_html(session.jira_issues)
         has_jira_issues = len(session.jira_issues) > 0
+
+        if session.workflow_type == WorkflowType.UPDATE_PAGE:
+            # update 워크플로우는 별도 템플릿 없이 새 body를 그대로 프리뷰로 사용
+            session.rendered_preview = session.content_raw
+            session.approval_token = str(uuid.uuid4())
+            session.approval_expires_at = datetime.now() + timedelta(minutes=APPROVAL_TOKEN_TTL_MINUTES)
+            self._transition(session, WorkflowState.WAIT_APPROVAL)
+            return
 
         if session.workflow_type == WorkflowType.WORKFLOW_A:
             variables = {
@@ -402,6 +453,10 @@ class WikiGenerationOrchestrator:
     _MAX_UPDATE_RETRIES = 3
 
     async def _create_wiki_page(self, session: WikiSession) -> WikiPageCreationResult:
+        # Update workflow: 기존 페이지 수정
+        if session.workflow_type == WorkflowType.UPDATE_PAGE:
+            return await self._update_existing_page(session)
+
         # Workflow C: 사용자 지정 부모 페이지 아래에 직접 생성
         if session.workflow_type == WorkflowType.WORKFLOW_C:
             page_title = session.page_title
@@ -478,6 +533,45 @@ class WikiGenerationOrchestrator:
             year_page_id=year_page_id,
             month_page_id=month_page_id,
         )
+
+    async def _update_existing_page(self, session: WikiSession) -> WikiPageCreationResult:
+        """기존 페이지를 새 body로 업데이트합니다 (Optimistic locking retry)."""
+        page_id = session.update_target_page_id
+        new_body = session.content_raw
+
+        for attempt in range(1, self._MAX_UPDATE_RETRIES + 1):
+            try:
+                current = await self._wiki.get_page_with_content(page_id)
+                new_version = current.version + 1
+
+                page = await self._wiki.update_page(
+                    page_id=page_id,
+                    title=current.title,
+                    body=new_body,
+                    version=new_version,
+                    space_key=current.space_key or session.custom_space_key,
+                )
+
+                logger.info(
+                    "페이지 업데이트 완료: page_id=%s, version=%d→%d",
+                    page.id, current.version, new_version,
+                )
+
+                return WikiPageCreationResult(
+                    page_id=page.id,
+                    title=page.title,
+                    url=page.url,
+                    parent_page_id="",
+                    was_updated=True,
+                )
+            except RuntimeError as e:
+                if "버전 충돌" in str(e) and attempt < self._MAX_UPDATE_RETRIES:
+                    logger.warning(
+                        "페이지 업데이트 버전 충돌 (시도 %d/%d), 재시도...",
+                        attempt, self._MAX_UPDATE_RETRIES,
+                    )
+                    continue
+                raise
 
     async def _append_to_existing_page(
         self,
