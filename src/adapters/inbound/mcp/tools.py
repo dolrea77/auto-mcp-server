@@ -78,30 +78,54 @@ def _check_wiki_base_url(settings) -> list[TextContent] | None:
 
 async def _detect_repository(
     branch_name: str, git_repos: dict[str, str],
-) -> tuple[str, str] | None:
-    """등록된 저장소들에서 브랜치를 찾아 (경로, 프로젝트명)을 반환합니다.
+) -> list[tuple[str, str]]:
+    """등록된 저장소들에서 브랜치를 찾아 [(경로, 프로젝트명), ...] 목록을 반환합니다.
 
     탐지 우선순위:
     1. 머지 커밋이 있는 저장소 (이미 머지 완료된 브랜치)
     2. 활성 브랜치가 있는 저장소 (아직 머지 안 된 브랜치)
+
+    같은 단계에서 여러 저장소가 매칭되면 모두 반환합니다.
     """
     # 1차: 머지 커밋 검색
+    merge_matches: list[tuple[str, str]] = []
     for name, path in git_repos.items():
         adapter = GitLocalAdapter(working_dir=path)
         extraction = await adapter._extract_from_merge_commit(branch_name)
         if extraction is not None:
             logger.info("머지 커밋 탐지: %s (%s)", name, path)
-            return path, name
+            merge_matches.append((path, name))
+
+    if merge_matches:
+        return merge_matches
 
     # 2차: 활성 브랜치 검색
+    branch_matches: list[tuple[str, str]] = []
     for name, path in git_repos.items():
         adapter = GitLocalAdapter(working_dir=path)
         check = await adapter._run_git("rev-parse", "--verify", branch_name)
         if check.returncode == 0:
             logger.info("활성 브랜치 탐지: %s (%s)", name, path)
-            return path, name
+            branch_matches.append((path, name))
 
-    return None
+    return branch_matches
+
+
+def _format_ambiguity_message(
+    branch_name: str, matches: list[tuple[str, str]],
+) -> str:
+    """여러 저장소에서 브랜치가 발견되었을 때 안내 메시지를 생성합니다."""
+    lines = [
+        "# ⚠️ 브랜치가 여러 저장소에서 발견됨\n",
+        f"**브랜치:** `{branch_name}`\n",
+        "다음 저장소들에서 해당 브랜치가 발견되었습니다:\n",
+        "| # | 프로젝트 | 경로 |",
+        "|---|---------|------|",
+    ]
+    for i, (path, name) in enumerate(matches, 1):
+        lines.append(f"| {i} | {name} | `{path}` |")
+    lines.append("\n`repository_path` 파라미터를 지정하여 저장소를 선택하세요.")
+    return "\n".join(lines)
 
 
 def _validate_repository_path(
@@ -554,9 +578,11 @@ def register_tools(app: Server) -> None:
                         return [TextContent(type="text", text=error_text)]
 
                     detected = await _detect_repository(branch_name, git_repos)
-                    if detected:
-                        repository_path, detected_name = detected
+                    if len(detected) == 1:
+                        repository_path, detected_name = detected[0]
                         logger.info("🔍 자동 탐지: '%s' → %s (%s)", branch_name, detected_name, repository_path)
+                    elif len(detected) > 1:
+                        return [TextContent(type="text", text=_format_ambiguity_message(branch_name, detected))]
                     else:
                         repos_list = "\n".join(f"  - {name}: {path}" for name, path in git_repos.items())
                         error_text = f"# ❌ 브랜치 자동 탐지 실패\n\n"
@@ -705,9 +731,11 @@ def register_tools(app: Server) -> None:
                         return [TextContent(type="text", text=error_text)]
 
                     detected = await _detect_repository(branch_name, git_repos)
-                    if detected:
-                        repository_path, detected_name = detected
+                    if len(detected) == 1:
+                        repository_path, detected_name = detected[0]
                         logger.info("🔍 자동 탐지: '%s' → %s (%s)", branch_name, detected_name, repository_path)
+                    elif len(detected) > 1:
+                        return [TextContent(type="text", text=_format_ambiguity_message(branch_name, detected))]
                     else:
                         repos_list = "\n".join(f"  - {name}: {path}" for name, path in git_repos.items())
                         error_text = f"# ❌ 브랜치 자동 탐지 실패\n\n"
