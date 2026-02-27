@@ -344,6 +344,18 @@ MAX_DIFF_CHARS=30000  # 기본값
 | **Git** | `collect_branch_commits` | 브랜치 커밋 수집 (Wiki 생성용) |
 | | `analyze_branch_changes` | 브랜치 변경사항 분석 (범용) |
 
+#### Context 사용량
+
+MCP 서버 연결 시 16개 Tool 정의(description + inputSchema)가 에이전트의 context에 로드됩니다.
+
+| 항목 | 토큰 수 |
+|---|---|
+| Tool description | ~1,500 |
+| inputSchema (파라미터 정의) | ~5,000 |
+| **합계** | **~6,500** |
+
+200k context 기준 약 **3.2%** 소모. 도구를 호출하지 않아도 연결만으로 이 만큼 사용됩니다.
+
 ---
 
 ### 1. Jira 기능

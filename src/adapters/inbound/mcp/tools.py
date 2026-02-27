@@ -1211,16 +1211,7 @@ def register_tools(app: Server) -> None:
         return [
             Tool(
                 name="get_jira_issue",
-                description="""특정 Jira 이슈를 key(ID)로 조회합니다.
-
-**사용 예시:**
-- "BNFDEV-2365 이슈 상세정보 알려줘"
-- "BNFDEV-2270 확인해줘"
-
-**응답 정보:**
-- 이슈 키, 제목, 상태, 담당자, 유형
-- 클릭 가능한 이슈 링크
-- 전체 설명 (description)""",
+                description="""특정 Jira 이슈를 key(ID)로 조회합니다.""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1267,15 +1258,7 @@ def register_tools(app: Server) -> None:
             ),
             Tool(
                 name="get_jira_project_meta",
-                description="""Jira 프로젝트의 이슈 유형과 각 유형별 상태값을 조회합니다.
-
-**사용 예시:**
-- "BNFDEV 프로젝트 이슈 유형 알려줘"
-- "BNFMT 프로젝트 상태값 조회해줘"
-
-**응답 정보:**
-- 이슈 유형 목록 (예: Bug, Task, Story 등)
-- 각 이슈 유형별 사용 가능한 상태값 목록""",
+                description="""Jira 프로젝트의 이슈 유형과 각 유형별 상태값을 조회합니다.""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1299,16 +1282,8 @@ def register_tools(app: Server) -> None:
 - **BNFMT-***: 종료일 설정 안 함
 - **기타**: duedate 필드에 종료일 설정
 
-**사용 예시:**
-- "BNFDEV-1234 이슈 완료처리 해줘" → customfield_10833에 오늘 날짜 설정
-- "BNFMT-567 완료로 변경해줘" → 종료일 설정 안 함
-- "BNFDEV-100 완료처리하고 종료일은 2026-03-01로 해줘" → customfield_10833에 2026-03-01 설정
-
 **완료 상태 우선순위 (이슈에서 전환 가능한 상태 기준):**
-- 배포완료(BNF) → DONE(BNF) → 검수완료(BNF) → 개발완료(BNF) → 답변완료(BNF) → 완료(개발) → 완료
-
-**응답 정보:**
-- 이슈 키, 제목, 이전 상태, 변경된 상태, 설정된 종료일""",
+- 배포완료(BNF) → DONE(BNF) → 검수완료(BNF) → 개발완료(BNF) → 답변완료(BNF) → 완료(개발) → 완료""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1328,14 +1303,7 @@ def register_tools(app: Server) -> None:
                 name="transition_jira_issue",
                 description="""Jira 이슈 상태를 원하는 값으로 전환합니다.
 
-완료 외에 진행중, 검수, 보류 등 어떤 상태로도 변경할 수 있습니다.
 해당 이슈에서 실제로 전환 가능한 상태 목록 안에서만 동작합니다.
-
-**사용 예시:**
-- "BNFDEV-1234 진행중(개발)으로 바꿔줘"
-- "BNFMT-567 처리중(BNF)으로 변경해줘"
-- "BNFDEV-100 운영검수(BNF) 상태로 전환해줘"
-- "BNFDEV-200 보류(BNF)로 바꿔줘"
 
 **BNFDEV 프로젝트 주요 상태값:**
 할일 / 기획/설계(BNF) / 개발(BNF) / 기획/설계 완료(BNF) / 설계검수(BNF) /
@@ -1344,10 +1312,7 @@ def register_tools(app: Server) -> None:
 
 **BNFMT 프로젝트 주요 상태값:**
 할일(BNF) / 개발접수(BNF) / 처리중(BNF) / 답변완료(BNF) /
-개발(BNF) / 기획/설계(BNF) / 운영검수(BNF) / 배포완료(BNF)
-
-**응답 정보:**
-- 이슈 키, 제목, 이전 상태, 변경된 상태""",
+개발(BNF) / 기획/설계(BNF) / 운영검수(BNF) / 배포완료(BNF)""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1365,18 +1330,7 @@ def register_tools(app: Server) -> None:
             ),
             Tool(
                 name="create_jira_filter",
-                description="""Jira에 새 필터를 이름과 JQL로 생성합니다.
-
-**사용 예시:**
-- "내 진행중 이슈 필터 만들어줘"
-- "assignee = currentUser() AND status = '진행중(개발)' 필터를 '내 진행중 이슈'로 저장해줘"
-
-**필수 입력:**
-- name: 필터 이름 (예: "내 진행중 이슈")
-- jql: JQL 쿼리 (예: "assignee = currentUser() AND status = \\"진행중(개발)\\"")
-
-**응답 정보:**
-- 생성된 필터 ID, 이름, JQL, 링크""",
+                description="""Jira에 새 필터를 이름과 JQL로 생성합니다.""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1394,54 +1348,11 @@ def register_tools(app: Server) -> None:
             ),
             Tool(
                 name="create_wiki_issue_page",
-                description="""Confluence Wiki에 Jira 이슈 정리 페이지 생성을 준비합니다. (워크플로우 A - 승인 필요)
+                description="""Confluence Wiki에 Jira 이슈 정리 페이지 생성을 준비합니다.
 
-⚠️ **중요: 이 도구는 즉시 Wiki 페이지를 생성하지 않습니다!**
-프리뷰를 생성하고 승인 대기 상태가 됩니다. 사용자가 approve_wiki_generation으로 승인해야 실제 페이지가 생성됩니다.
+⚠️ 즉시 생성하지 않음. 프리뷰 반환 후 approve_wiki_generation으로 승인 필요.
 
-**워크플로우:**
-1. 이 도구 호출 → 프리뷰 생성 + 승인 토큰 발급
-2. 사용자가 프리뷰 확인
-3. approve_wiki_generation(session_id, approval_token) 호출 → 실제 Wiki 페이지 생성
-
-**🔴 커밋 수집 시 필수 주의사항 (commit_list를 직접 수집하는 경우):**
-
-올바른 베이스 브랜치를 사용하여 해당 브랜치만의 고유한 커밋만 수집하세요.
-
-```bash
-# ✅ 올바른 방법 (우선순위 순):
-git log --oneline --no-merges dev..dev_{이슈키}
-git log --oneline --no-merges origin/dev..dev_{이슈키}
-
-# ❌ 잘못된 방법 (다른 브랜치 커밋도 포함됨):
-git log --oneline --no-merges master..dev_{이슈키}
-```
-
-**참고:** commit_list를 제공하지 않으면 내부적으로 자동 수집됩니다 (올바른 베이스 브랜치 자동 탐지).
-
-**권장 사용 흐름 (GitLab MCP 연동):**
-1. GitLab MCP로 dev_{이슈키} 브랜치 커밋 목록 조회
-2. 조회된 커밋 목록을 commit_list 파라미터로 전달
-3. 프리뷰 확인 후 승인
-
-**사용 예시:**
-- complete_jira_issue 완료 후 Wiki 페이지 생성할 때 사용
-- "BNFDEV-1234 Wiki 이슈 정리 페이지 만들어줘"
-
-**필수 입력:**
-- issue_key: Jira 이슈키 (예: "BNFDEV-1234")
-- issue_title: Jira 이슈 제목
-
-**선택 입력:**
-- commit_list: 커밋 목록 (GitLab MCP 또는 git log로 수집, 줄바꿈 구분). 미제공 시 로컬 git 시도
-- change_summary: 변경 내용 요약 (코드 diff 분석 결과). 미제공 시 커밋 메시지에서 자동 생성
-- assignee: 담당자 (기본값: 미지정)
-- resolution_date: 완료일 YYYY-MM-DD (기본값: 오늘 날짜)
-- priority: 우선순위 (기본값: 보통)
-
-**응답 정보:**
-- 세션 ID, 승인 토큰, 프리뷰, 변경 내용 요약
-- 승인 방법 안내""",
+commit_list 미제공 시 자동 수집됨. 직접 수집 시 collect_branch_commits 사용 권장.""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1485,45 +1396,13 @@ git log --oneline --no-merges master..dev_{이슈키}
             ),
             Tool(
                 name="collect_branch_commits",
-                description="""브랜치의 고유 커밋 목록과 변경사항(diff)을 수집합니다.
+                description="""브랜치의 고유 커밋 목록과 변경사항(diff)을 수집합니다. **Wiki 페이지 생성 전 커밋 수집용.**
 
-🎯 **용도:** Wiki 페이지 생성 전 커밋 정보 수집
+git 명령 대신 이 도구를 사용하세요. 올바른 베이스 브랜치를 자동 탐지합니다.
+(우선순위: dev → origin/dev → develop → origin/develop → main → master)
 
-🔴 **브랜치 변경사항 조회 시 이 도구를 사용하세요!**
-- git 명령을 직접 사용하지 마세요
-- 올바른 베이스 브랜치를 자동으로 찾아 정확한 커밋 범위를 수집합니다
-- 베이스 브랜치 우선순위: dev → origin/dev → develop → origin/develop → main → master
-
-**저장소 탐지 방식:**
-- `repository_path` 지정 시: 해당 경로에서 직접 검색
-- `repository_path` 미지정 시: `.env.local`의 `GIT_REPOSITORIES`에 등록된 저장소들을 자동 순회하여 브랜치 탐지
-- 등록된 저장소가 없거나 브랜치를 찾을 수 없으면 에러 반환
-
-**워크플로우 (2단계 선택 과정):**
-1. 이 도구로 브랜치 커밋 수집 (기본: include_diff=false)
-2. 응답에 포함된 diff 크기/토큰 정보를 사용자에게 안내
-3. 사용자에게 방법 A(커밋 메시지 기반, 빠름) / 방법 B(diff 분석 기반, 정밀) 선택 요청
-4. 방법 B 선택 시: include_diff=true로 다시 호출하여 diff 수집
-5. change_summary 작성 후 create_wiki_page_with_content로 Wiki 페이지 생성
-
-**사용 예시:**
-- "dev_rf 브랜치 커밋 수집해줘"
-  → collect_branch_commits(branch_name="dev_rf")  # GIT_REPOSITORIES에서 자동 탐지
-- "특정 프로젝트 지정"
-  → collect_branch_commits(branch_name="dev_rf", repository_path="/Users/sung/WebstormProjects/oper-back-office")
-
-**필수 입력:**
-- branch_name: 조회할 브랜치명 (예: "dev_rf", "dev_BNFDEV-1234", "feature/login")
-
-**선택 입력:**
-- repository_path: git 저장소 경로 (생략 시 GIT_REPOSITORIES에서 자동 탐지)
-  - 예: "/Users/sung/WebstormProjects/oper-back-office"
-
-**응답 정보:**
-- 커밋 수, 커밋 목록, 변경 파일 통계 (diff --stat)
-- diff 크기 및 예상 토큰 수 + 방법 A/B 선택 안내 (에이전트가 사용자에게 전달)
-- include_diff=true 시: 스마트 필터링된 코드 변경사항 (소스코드 우선, lock/생성파일 제외) + 필터링 결과 리포트 (포함/제외 파일 목록)
-- create_wiki_page_with_content 사용 예시""",
+repository_path 미지정 시 GIT_REPOSITORIES에 등록된 저장소에서 자동 탐지.
+include_diff 기본값 false. 응답의 안내를 따라 필요시 true로 재호출.""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1546,30 +1425,11 @@ git log --oneline --no-merges master..dev_{이슈키}
             ),
             Tool(
                 name="analyze_branch_changes",
-                description="""브랜치의 변경사항을 분석하여 보고합니다.
+                description="""브랜치의 변경사항을 분석하여 보고합니다. **범용 변경사항 분석/질문 답변용.**
 
-🎯 **용도:** 브랜치/커밋 변경사항에 대한 질문에 답변하기 위한 데이터 수집
+collect_branch_commits는 Wiki 생성 전용, 이 도구는 "뭐 바뀌었어?", "변경사항 요약해줘" 등 범용 분석용.
 
-**이 도구를 사용하는 경우:**
-- "dev_xxx 브랜치에서 뭐 바뀌었어?"
-- "이번 변경사항 요약해줘"
-- "어떤 파일이 수정됐어?"
-- "이 브랜치의 변경 범위가 어때?"
-
-**collect_branch_commits와의 차이:**
-- collect_branch_commits: Wiki 페이지 생성 워크플로우 전용
-- analyze_branch_changes: 범용 변경사항 분석/질문 답변용
-
-**저장소 탐지 방식:**
-- `repository_path` 지정 시: 해당 경로에서 직접 검색
-- `repository_path` 미지정 시: `.env.local`의 `GIT_REPOSITORIES`에 등록된 저장소들을 자동 순회하여 브랜치 탐지
-
-**응답 정보:**
-- 커밋 수, 커밋 목록
-- 변경 파일 통계 (diff --stat)
-- 스마트 필터링된 코드 변경사항 (소스코드 우선, lock/생성파일 제외)
-- 필터링 리포트 (포함/제외 파일 목록)
-- 감지된 Jira 이슈키""",
+repository_path 미지정 시 GIT_REPOSITORIES에서 자동 탐지.""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1587,63 +1447,11 @@ git log --oneline --no-merges master..dev_{이슈키}
             ),
             Tool(
                 name="create_wiki_page_with_content",
-                description="""외부에서 수집한 커밋 내용으로 Confluence Wiki 페이지 생성을 준비합니다. (워크플로우 B - 승인 필요)
+                description="""외부에서 수집한 커밋 내용으로 Confluence Wiki 페이지 생성을 준비합니다.
 
-⚠️ **중요: 이 도구는 즉시 Wiki 페이지를 생성하지 않습니다!**
-프리뷰를 생성하고 승인 대기 상태가 됩니다. 사용자가 approve_wiki_generation으로 승인해야 실제 페이지가 생성됩니다.
+⚠️ 즉시 생성하지 않음. 프리뷰 반환 후 approve_wiki_generation으로 승인 필요.
 
-**워크플로우:**
-1. 이 도구 호출 → 프리뷰 생성 + 승인 토큰 발급
-2. 사용자가 프리뷰 확인
-3. approve_wiki_generation(session_id, approval_token) 호출 → 실제 Wiki 페이지 생성
-
-**🔴 커밋 수집 방법 (중요):**
-
-**권장 방법 (베이스 브랜치 자동 탐지):**
-```
-1. collect_branch_commits("브랜치명") 도구 사용
-2. 반환된 커밋 목록을 commit_list에 전달
-```
-
-**직접 수집 시 주의사항:**
-올바른 베이스 브랜치를 사용하여 해당 브랜치만의 고유한 커밋만 수집하세요.
-
-```bash
-# ✅ 올바른 방법 (우선순위 순):
-git log --oneline --no-merges dev..{브랜치명}
-git log --oneline --no-merges origin/dev..{브랜치명}
-git log --oneline --no-merges develop..{브랜치명}
-
-# ❌ 잘못된 방법 (다른 브랜치 커밋도 포함됨):
-git log --oneline --no-merges master..{브랜치명}
-git log --oneline --no-merges main..{브랜치명}
-```
-
-**권장 사용 흐름:**
-1. collect_branch_commits 도구로 커밋 수집 (베이스 브랜치 자동 탐지)
-2. 수집한 커밋 내용 분석하여 change_summary 작성
-3. 이 도구로 Wiki 페이지 생성 요청
-4. 프리뷰 확인 후 승인
-
-**사용 예시:**
-- "dev_rf 브랜치 커밋 목록으로 Wiki 페이지 만들어줘"
-- "GitLab MR #123 커밋 내용으로 Wiki 정리해줘"
-
-**필수 입력:**
-- page_title: Wiki 페이지 제목 (예: "dev_rf", "dev_BNFDEV-1234")
-- commit_list: 커밋 목록 (줄바꿈으로 구분, 예: "abc1234 fix: 버그 수정\\ndef5678 feat: 기능 추가")
-
-**선택 입력:**
-- input_type: 입력 유형 설명 (기본값: "브랜치명", 예: "GitLab MR", "커밋 범위")
-- input_value: 브랜치명, MR 번호 등 원본 값
-- base_date: 기준 날짜 YYYY-MM-DD (기본값: 오늘 날짜)
-- change_summary: 변경 내용 요약 (생략 시 커밋 메시지에서 자동 생성)
-- jira_issue_keys: 관련 Jira 이슈 키 (콤마 구분, 예: "BNFDEV-1234,BNFMT-567"). 포함 시 Jira 이슈 내용이 Wiki에 추가됨
-
-**응답 정보:**
-- 세션 ID, 승인 토큰, 프리뷰, 변경 내용 요약
-- 포함된 Jira 이슈 정보 (있는 경우)
-- 승인 방법 안내""",
+커밋 수집은 collect_branch_commits 도구 사용 권장 (베이스 브랜치 자동 탐지).""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1693,39 +1501,13 @@ git log --oneline --no-merges main..{브랜치명}
             ),
             Tool(
                 name="create_wiki_custom_page",
-                description="""특정 부모 페이지 아래에 자유 형식 콘텐츠로 Confluence Wiki 페이지를 생성합니다. (워크플로우 C - 승인 필요)
+                description="""특정 부모 페이지 아래에 자유 형식 콘텐츠로 Confluence Wiki 페이지를 생성합니다.
 
-⚠️ **중요: 이 도구는 즉시 Wiki 페이지를 생성하지 않습니다!**
-프리뷰를 생성하고 승인 대기 상태가 됩니다. 사용자가 approve_wiki_generation으로 승인해야 실제 페이지가 생성됩니다.
+⚠️ 즉시 생성하지 않음. 프리뷰 반환 후 approve_wiki_generation으로 승인 필요.
 
-**워크플로우:**
-1. 이 도구 호출 → 마크다운을 Confluence HTML로 변환 + 프리뷰 생성 + 승인 토큰 발급
-2. 사용자가 프리뷰 확인
-3. approve_wiki_generation(session_id, approval_token) 호출 → 실제 Wiki 페이지 생성
-
-**특징:**
-- 기존 워크플로우(A/B)와 달리 연/월 계층 구조를 사용하지 않음
-- 사용자가 지정한 부모 페이지 바로 아래에 페이지 생성
-- 부모 페이지를 ID 또는 제목으로 지정 가능
-- 마크다운 형식 지원 (제목, 목록, 코드블록, 볼드, 이탤릭 등)
-- 일반 텍스트도 자동으로 가독성 좋은 HTML로 변환
-
-**사용 예시:**
-- "339090255 페이지 아래에 회의록 페이지 만들어줘" → parent_page_id 사용
-- "AI 페이지 아래에 기술 문서 작성해줘" → parent_page_title 사용
-- "다른 space의 특정 페이지 아래에 페이지 만들어줘" → space_key 지정
-
-**필수 입력:**
-- page_title: 생성할 페이지 제목
-- content: 페이지 내용 (마크다운 또는 텍스트)
-- parent_page_id 또는 parent_page_title 중 하나 (둘 다 지정 시 parent_page_id 우선)
-
-**선택 입력:**
-- space_key: Confluence Space 키 (생략 시 WIKI_ISSUE_SPACE_KEY 기본값 사용)
-
-**응답 정보:**
-- 세션 ID, 승인 토큰, 프리뷰
-- 승인 방법 안내""",
+연/월 계층 구조 없이 지정한 부모 페이지 바로 아래에 생성.
+마크다운 및 일반 텍스트를 자동으로 Confluence HTML로 변환.
+parent_page_id 또는 parent_page_title 중 하나 필수 (둘 다 지정 시 ID 우선).""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1757,20 +1539,8 @@ git log --oneline --no-merges main..{브랜치명}
                 name="get_wiki_page",
                 description="""Confluence Wiki 페이지를 조회하여 내용을 반환합니다.
 
-페이지 ID 또는 페이지 제목으로 특정 Wiki 페이지의 내용을 조회합니다.
-페이지 본문은 Confluence Storage Format (HTML)으로 반환됩니다.
-
-**사용 예시:**
-- "A 페이지 내용이 뭐야?" → page_title 사용
-- "페이지 ID 339090255 내용 알려줘" → page_id 사용
-
-**입력:**
-- page_id 또는 page_title 중 하나 필수 (둘 다 지정 시 page_id 우선)
-- space_key: Space 키 (page_title 검색 시 사용, 생략 시 기본값)
-
-**응답 정보:**
-- 페이지 ID, 제목, Space, URL, 버전
-- 페이지 본문 (Confluence Storage Format HTML)""",
+page_id 또는 page_title 중 하나 필수 (둘 다 지정 시 page_id 우선).
+페이지 본문은 Confluence Storage Format (HTML)으로 반환됩니다.""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1791,33 +1561,12 @@ git log --oneline --no-merges main..{브랜치명}
             ),
             Tool(
                 name="update_wiki_page",
-                description="""기존 Confluence Wiki 페이지의 내용을 수정합니다. (2단계 승인 프로세스)
+                description="""기존 Confluence Wiki 페이지의 내용을 수정합니다.
 
-페이지 ID 또는 제목으로 대상을 식별하고, 새 본문으로 교체합니다.
-승인 전까지 실제 수정은 적용되지 않습니다.
+⚠️ 즉시 수정하지 않음. 프리뷰 반환 후 approve_wiki_generation으로 승인 필요.
 
-⚠️ **에이전트 주의사항:**
-- 수정 전 반드시 get_wiki_page로 현재 내용을 확인하세요
-- 사용자에게 변경 내용을 설명하고 승인을 받은 후에만 이 도구를 호출하세요
-- 이 도구는 프리뷰만 생성합니다. 실제 수정은 approve_wiki_generation으로 승인해야 적용됩니다
-
-**워크플로우:**
-1. 이 도구 호출 → 프리뷰 + 승인 토큰 반환
-2. 사용자에게 프리뷰 보여주기
-3. 사용자 승인 시 approve_wiki_generation 호출 → 실제 수정 적용
-
-**사용 예시:**
-- "A 페이지에 새 내용 추가해줘" → get_wiki_page로 조회 → HTML 수정 → 이 도구로 수정 요청
-- "A 페이지에서 특정 내용 삭제해줘" → get_wiki_page로 조회 → HTML에서 삭제 → 이 도구로 수정 요청
-
-**입력:**
-- page_id 또는 page_title 중 하나 필수
-- body: 수정된 전체 페이지 본문 (Confluence Storage Format HTML)
-- space_key: Space 키 (page_title 검색 시 사용, 생략 시 기본값)
-
-**응답 정보:**
-- 세션 ID, 승인 토큰, 수정 프리뷰
-- 승인 방법 안내""",
+수정 전 반드시 get_wiki_page로 현재 내용을 확인하세요.
+body에는 수정된 전체 페이지 본문 (Confluence Storage Format HTML)을 전달합니다.""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1843,16 +1592,7 @@ git log --oneline --no-merges main..{브랜치명}
             ),
             Tool(
                 name="reload_wiki_templates",
-                description="""Wiki 템플릿 YAML 파일을 핫 리로드합니다.
-
-config/wiki_templates.yaml 파일을 수정한 후 서버 재시작 없이 변경 사항을 반영합니다.
-
-**사용 예시:**
-- "Wiki 템플릿 리로드해줘"
-- "템플릿 캐시 갱신해줘"
-
-**응답 정보:**
-- 리로드된 워크플로우 수, 이름, 파일 경로""",
+                description="""Wiki 템플릿 YAML 파일을 핫 리로드합니다. 서버 재시작 없이 config/wiki_templates.yaml 변경 반영.""",
                 inputSchema={
                     "type": "object",
                     "properties": {},
@@ -1860,18 +1600,7 @@ config/wiki_templates.yaml 파일을 수정한 후 서버 재시작 없이 변�
             ),
             Tool(
                 name="get_wiki_generation_status",
-                description="""Wiki 생성 오케스트레이터 세션 상태를 조회합니다.
-
-start_wiki_workflow_a/b로 시작된 세션의 현재 상태, 프리뷰, 승인 토큰 등을 조회합니다.
-
-**사용 예시:**
-- "Wiki 생성 세션 상태 확인해줘"
-
-**필수 입력:**
-- session_id: 세션 ID (start_workflow 응답에서 받은 값)
-
-**응답 정보:**
-- 세션 ID, 워크플로우 유형, 현재 상태, 페이지 제목, 승인 토큰, 프리뷰""",
+                description="""Wiki 생성 세션의 현재 상태, 프리뷰, 승인 토큰을 조회합니다.""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1885,20 +1614,7 @@ start_wiki_workflow_a/b로 시작된 세션의 현재 상태, 프리뷰, 승인 
             ),
             Tool(
                 name="approve_wiki_generation",
-                description="""Wiki 생성을 승인하여 실제 Confluence 페이지를 생성합니다.
-
-오케스트레이터가 WAIT_APPROVAL 상태일 때만 동작합니다.
-세션 ID와 승인 토큰이 일치해야 페이지가 생성됩니다.
-
-**사용 예시:**
-- "Wiki 생성 승인해줘"
-
-**필수 입력:**
-- session_id: 세션 ID
-- approval_token: 승인 토큰 (get_wiki_generation_status에서 확인)
-
-**응답 정보:**
-- 생성된 페이지 제목, ID, URL""",
+                description="""Wiki 생성을 승인하여 실제 Confluence 페이지를 생성/수정합니다. WAIT_APPROVAL 상태일 때만 동작.""",
                 inputSchema={
                     "type": "object",
                     "properties": {
