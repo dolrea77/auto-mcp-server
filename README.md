@@ -704,6 +704,7 @@ Claude에게: "dev_BNFDEV-1234 브랜치 커밋 수집해줘"
 **저장소 자동 탐지:**
 - `repository_path` 미지정 시 `.env.local`의 `GIT_REPOSITORIES`에 등록된 저장소를 순회하여 브랜치를 탐지
 - 머지 커밋이 있는 저장소 우선, 활성 브랜치가 있는 저장소 차순
+- **동일 브랜치가 여러 저장소에 존재하면** 자동 선택하지 않고 disambiguation 메시지를 반환하여 `repository_path` 지정을 안내합니다
 
 **스마트 Diff 필터링 (`include_diff=true`):**
 - 소스코드(high priority) > 설정/스타일 파일(medium) > lock/생성 파일(low) 순으로 우선 포함
@@ -739,7 +740,7 @@ Claude에게: "이번 변경사항 요약해줘"
 - `branch_name`: 분석할 브랜치명
 
 **선택 파라미터:**
-- `repository_path`: git 저장소 경로 (생략 시 `GIT_REPOSITORIES`에서 자동 탐지)
+- `repository_path`: git 저장소 경로 (생략 시 `GIT_REPOSITORIES`에서 자동 탐지, 동일 브랜치가 여러 저장소에 존재하면 disambiguation 메시지 반환)
 
 **`collect_branch_commits`와의 차이:**
 - `collect_branch_commits`: Wiki 페이지 생성 워크플로우 전용
@@ -1016,6 +1017,33 @@ Claude: "Wiki 페이지 수정 완료: https://confluence.../..."
 > "BNFDEV-1234 Wiki 이슈 정리 페이지 만들어줘"              ← 프로젝트 구분 표시 없음
 > "BNFDEV-1234 supplier-back-office도 같은 Wiki에 추가해줘"  ← 이것만 구분 표시됨
 > ```
+
+---
+
+### 예시 9: 동일 브랜치가 여러 저장소에 존재하는 경우
+
+`dev_BNFDEV-1234` 브랜치가 `oper-back-office`와 `gift-app` 두 저장소에 모두 존재하는 경우:
+
+```
+사용자: "dev_BNFDEV-1234 브랜치 커밋 수집해줘"
+→ collect_branch_commits("dev_BNFDEV-1234") 실행
+
+Claude: "⚠️ 브랜치가 여러 저장소에서 발견됨
+
+| # | 프로젝트 | 경로 |
+| 1 | oper-back-office | /Users/.../oper-back-office |
+| 2 | gift-app | /Users/.../gift-app |
+
+repository_path 파라미터를 지정하여 저장소를 선택하세요."
+
+사용자: "gift-app 프로젝트의 커밋을 수집해줘"
+→ collect_branch_commits("dev_BNFDEV-1234", repository_path="/Users/.../gift-app") 실행
+
+Claude: "8개 커밋 수집 완료. ..."
+```
+
+> **팁:** 하나의 저장소에만 해당 브랜치가 존재하면 기존처럼 자동 선택됩니다.
+> 여러 저장소에 동일 브랜치가 있을 때만 disambiguation 메시지가 표시됩니다.
 
 ---
 
