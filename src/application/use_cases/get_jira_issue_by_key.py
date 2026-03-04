@@ -45,4 +45,5 @@ class GetJiraIssueByKeyUseCase:
             "description": issue.description,
             "issuetype": issue.issuetype,
             "url": issue.url,
+            "custom_fields": dict(issue.custom_fields),
         }

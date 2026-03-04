@@ -4,38 +4,53 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta
 from enum import Enum
 
+from src.domain.jira import JiraProjectConfig
+
 # 승인 토큰 유효 시간 (분)
 APPROVAL_TOKEN_TTL_MINUTES = 30
 
-# 하드코딩된 Jira 이슈키 패턴 (BNFDEV-숫자, BNFMT-숫자)
-_JIRA_ISSUE_KEY_PATTERN = re.compile(r"\b(?:BNFDEV|BNFMT)-\d+\b")
+
+def build_issue_key_pattern(project_keys: list[str]) -> re.Pattern[str]:
+    """프로젝트 키 리스트로부터 이슈키 추출 정규식을 동적 생성합니다."""
+    if not project_keys:
+        # 프로젝트 키가 없으면 매칭 불가 패턴 반환
+        return re.compile(r"(?!)")
+    escaped = [re.escape(k) for k in project_keys]
+    return re.compile(r"\b(?:" + "|".join(escaped) + r")-\d+\b")
 
 
-def extract_jira_issue_keys(text: str) -> list[str]:
-    """텍스트에서 BNFDEV/BNFMT 이슈키를 추출합니다. 중복 제거, 순서 보존."""
-    if not text:
+def extract_jira_issue_keys(text: str, project_keys: list[str]) -> list[str]:
+    """텍스트에서 등록된 프로젝트의 이슈키를 추출합니다. 중복 제거, 순서 보존."""
+    if not text or not project_keys:
         return []
-    keys = [m.group() for m in _JIRA_ISSUE_KEY_PATTERN.finditer(text)]
+    pattern = build_issue_key_pattern(project_keys)
+    keys = [m.group() for m in pattern.finditer(text)]
     return list(dict.fromkeys(keys))
 
 
-def get_wiki_date_for_issue(issue_data: dict) -> str:
-    """프로젝트별 Wiki 경로 날짜를 결정합니다.
-    - BNFDEV: customfield_10833 (종료일) 기준
-    - BNFMT: created (생성일) 기준
-    - 그 외: 빈 문자열
-    """
-    key = issue_data.get("key", "")
-    if key.startswith("BNFDEV"):
-        date_val = issue_data.get("custom_end_date", "")
-        if date_val:
-            return date_val[:10]
-    elif key.startswith("BNFMT"):
-        date_val = issue_data.get("created", "")
-        if date_val:
-            return date_val[:10]
-    # 새 프로젝트 추가 시 여기에 elif 블록 추가(위키 페이지 구조에 사용되는 일자 기준일 설정)
-    return ""
+def get_wiki_date_for_issue(
+    issue_data: dict[str, str | dict[str, str | None]],
+    configs_by_key: dict[str, JiraProjectConfig],
+) -> str:
+    """프로젝트별 Wiki 경로 날짜를 설정 기반으로 결정합니다."""
+    key = str(issue_data.get("key", ""))
+    project_prefix = key.split("-")[0] if "-" in key else ""
+    config = configs_by_key.get(project_prefix)
+    if not config or not config.wiki_date_field:
+        return ""
+
+    # 커스텀 필드는 custom_fields 딕셔너리에서, 표준 필드는 최상위에서 조회
+    if config.wiki_date_field.startswith("customfield_"):
+        custom_fields = issue_data.get("custom_fields", {})
+        if isinstance(custom_fields, dict):
+            date_val = custom_fields.get(config.wiki_date_field, "") or ""
+        else:
+            date_val = ""
+    else:
+        raw = issue_data.get(config.wiki_date_field, "")
+        date_val = str(raw) if raw else ""
+
+    return date_val[:10] if date_val else ""
 
 
 class WorkflowType(Enum):

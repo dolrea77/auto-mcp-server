@@ -1,11 +1,33 @@
 import logging
-from typing import Any
 
 import httpx
 
-from src.domain.jira import JiraIssue, JiraFilter, JiraProjectMeta
+from src.domain.jira import JiraIssue, JiraFilter, JiraProjectConfig, JiraProjectMeta
 
 logger = logging.getLogger(__name__)
+
+
+def _collect_custom_field_ids(configs: list[JiraProjectConfig]) -> set[str]:
+    """설정에서 참조하는 모든 customfield_* 필드 ID를 수집"""
+    field_ids: set[str] = set()
+    for config in configs:
+        if config.due_date_field and config.due_date_field.startswith("customfield_"):
+            field_ids.add(config.due_date_field)
+        if config.wiki_date_field and config.wiki_date_field.startswith("customfield_"):
+            field_ids.add(config.wiki_date_field)
+        for field_id in config.jira_custom_fields.values():
+            if field_id.startswith("customfield_"):
+                field_ids.add(field_id)
+    return field_ids
+
+
+def _build_field_display_names(configs: list[JiraProjectConfig]) -> dict[str, str]:
+    """필드 ID → 표시명 역방향 매핑 (모든 프로젝트 통합)"""
+    display_names: dict[str, str] = {}
+    for config in configs:
+        for display_name, field_id in config.jira_custom_fields.items():
+            display_names[field_id] = display_name
+    return display_names
 
 # 이슈 유형별 완료 상태값 우선순위 맵
 # 각 리스트는 우선순위 순으로 나열 (앞쪽이 더 우선)
@@ -25,10 +47,14 @@ _DONE_STATUS_PRIORITY: list[str] = [
 class JiraAdapter:
     """Jira REST API와 통신하는 Outbound Adapter"""
 
-    def __init__(self, base_url: str, user: str, password: str):
+    def __init__(self, base_url: str, user: str, password: str, project_configs: list[JiraProjectConfig] | None = None):
         self.base_url = base_url.rstrip("/")
         self.user = user
         self.password = password
+        self._project_configs = project_configs or []
+        self._configs_by_key: dict[str, JiraProjectConfig] = {c.key: c for c in self._project_configs}
+        self._custom_field_ids: set[str] = _collect_custom_field_ids(self._project_configs)
+        self._field_display_names: dict[str, str] = _build_field_display_names(self._project_configs)
 
     # ------------------------------------------------------------------
     # Public methods
@@ -37,9 +63,14 @@ class JiraAdapter:
     async def search_issues(self, jql: str) -> list[JiraIssue]:
         """JQL 쿼리를 사용하여 Jira 이슈를 조회합니다."""
         url = f"{self.base_url}/rest/api/2/search"
+        base_fields = "key,summary,status,assignee,description,issuetype,created"
+        if self._custom_field_ids:
+            fields_str = f"{base_fields},{','.join(sorted(self._custom_field_ids))}"
+        else:
+            fields_str = base_fields
         params = {
             "jql": jql,
-            "fields": "key,summary,status,assignee,description,issuetype,customfield_10833,created",
+            "fields": fields_str,
         }
 
         logger.info("🌐 Jira API 호출 시작")
@@ -134,16 +165,12 @@ class JiraAdapter:
             issuetype_statuses=issuetype_statuses,
         )
 
-    async def complete_issue(self, key: str, due_date: str) -> dict:
+    async def complete_issue(self, key: str, due_date: str) -> dict[str, str]:
         """
         이슈를 완료 처리합니다.
 
         완료 상태 우선순위(_DONE_STATUS_PRIORITY) 중 해당 이슈에서
-        전환 가능한 첫 번째 상태로 전환하고 이슈 키 프리픽스에 따라 종료일을 설정합니다.
-
-        - BNFDEV-*: customfield_10833 필드에 종료일 설정
-        - BNFMT-*: 종료일 설정 안 함
-        - 기타: duedate 필드에 종료일 설정
+        전환 가능한 첫 번째 상태로 전환하고 프로젝트 설정에 따라 종료일을 설정합니다.
         """
         logger.info("🔄 이슈 완료 처리 시작: key=%s, due_date=%s", key, due_date)
 
@@ -174,26 +201,21 @@ class JiraAdapter:
                 target_status=target_status,
             )
 
-            # 이슈 키 프리픽스에 따라 종료일 처리
-            if key.startswith("BNFDEV-"):
-                # BNFDEV: customfield_10833에 종료일 설정
+            # 프로젝트 설정에 따라 종료일 처리
+            project_prefix = key.split("-")[0] if "-" in key else ""
+            config = self._configs_by_key.get(project_prefix)
+            due_date_field = config.due_date_field if config else None
+
+            if due_date_field:
                 resp = await client.put(
                     f"{self.base_url}/rest/api/2/issue/{key}",
-                    json={"fields": {"customfield_10833": due_date}},
+                    json={"fields": {due_date_field: due_date}},
                 )
                 resp.raise_for_status()
-                logger.info("✅ 종료일 설정 완료 (customfield_10833): %s", due_date)
-            elif key.startswith("BNFMT-"):
-                # BNFMT: 종료일 설정 안 함
-                logger.info("ℹ️ BNFMT 이슈는 종료일을 설정하지 않습니다.")
+                display_name = self._field_display_names.get(due_date_field, due_date_field)
+                logger.info("✅ 종료일 설정 완료 (%s): %s", display_name, due_date)
             else:
-                # 기타: duedate 필드에 종료일 설정
-                resp = await client.put(
-                    f"{self.base_url}/rest/api/2/issue/{key}",
-                    json={"fields": {"duedate": due_date}},
-                )
-                resp.raise_for_status()
-                logger.info("✅ 종료일 설정 완료 (duedate): %s", due_date)
+                logger.info("ℹ️ '%s' 프로젝트는 종료일을 설정하지 않습니다.", project_prefix)
 
         logger.info("✅ 이슈 완료 처리 성공: %s", key)
         return {
@@ -352,32 +374,46 @@ class JiraAdapter:
 
         return summary, current_status, target_status, issuetype
 
-    def _parse_issue(self, issue_data: dict[str, Any]) -> JiraIssue:
+    def _parse_issue(self, issue_data: dict[str, str | dict[str, str]]) -> JiraIssue:
         """API 응답을 JiraIssue 엔티티로 파싱합니다."""
         fields = issue_data.get("fields", {})
+        if not isinstance(fields, dict):
+            fields = {}
 
-        status = fields.get("status", {}).get("name", "Unknown")
+        status_obj = fields.get("status")
+        status = status_obj.get("name", "Unknown") if isinstance(status_obj, dict) else "Unknown"
+
         assignee_obj = fields.get("assignee")
-        assignee = assignee_obj.get("displayName", "Unassigned") if assignee_obj else "Unassigned"
-        issuetype = fields.get("issuetype", {}).get("name", "Unknown")
-        description = fields.get("description")
+        assignee = assignee_obj.get("displayName", "Unassigned") if isinstance(assignee_obj, dict) else "Unassigned"
+
+        issuetype_obj = fields.get("issuetype")
+        issuetype = issuetype_obj.get("name", "Unknown") if isinstance(issuetype_obj, dict) else "Unknown"
+
+        description_raw = fields.get("description")
+        description = str(description_raw) if description_raw is not None else None
 
         # 날짜 필드
-        created_raw = fields.get("created")  # ISO 8601 (예: "2026-02-15T10:30:00.000+0900")
-        custom_end_date = fields.get("customfield_10833")  # 종료일 (예: "2026-03-01")
+        created_raw = fields.get("created")
+        created_str = str(created_raw)[:10] if created_raw else None
+
+        # 동적 커스텀 필드 수집
+        custom_fields_data: dict[str, str | None] = {}
+        for cf_id in self._custom_field_ids:
+            raw_val = fields.get(cf_id)
+            custom_fields_data[cf_id] = str(raw_val) if raw_val is not None else None
 
         # 이슈 URL (브라우저에서 열 수 있는 링크)
-        key = issue_data.get("key", "")
+        key = str(issue_data.get("key", ""))
         url = f"{self.base_url}/browse/{key}" if key else ""
 
         return JiraIssue(
             key=key,
-            summary=fields.get("summary", ""),
+            summary=str(fields.get("summary", "")),
             status=status,
             assignee=assignee,
             description=description,
             issuetype=issuetype,
             url=url,
-            created=created_raw[:10] if created_raw else None,
-            custom_end_date=custom_end_date,
+            created=created_str,
+            custom_fields=custom_fields_data,
         )

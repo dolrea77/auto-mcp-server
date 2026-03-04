@@ -2,6 +2,16 @@ from dataclasses import dataclass, field
 
 
 @dataclass(frozen=True)
+class JiraProjectConfig:
+    """프로젝트별 Jira 설정"""
+    key: str                              # 프로젝트 키 (예: "BNFDEV")
+    due_date_field: str | None            # 종료일 필드 (None=미설정)
+    wiki_date_field: str                  # Wiki 기준일 Jira 필드명 (빈 문자열=날짜 없음)
+    jira_custom_fields: dict[str, str] = field(default_factory=dict)    # 표시명→필드ID 매핑
+    statuses: list[str] = field(default_factory=list)                   # 주요 상태값 목록
+
+
+@dataclass(frozen=True)
 class JiraIssue:
     """Jira 이슈 엔티티"""
     key: str
@@ -11,8 +21,8 @@ class JiraIssue:
     description: str | None
     issuetype: str
     url: str
-    created: str | None = None           # 생성일 (BNFMT 경로 기준)
-    custom_end_date: str | None = None   # customfield_10833 종료일 (BNFDEV 경로 기준)
+    created: str | None = None
+    custom_fields: dict[str, str | None] = field(default_factory=dict)  # Jira 커스텀 필드 동적 저장
 
 
 @dataclass(frozen=True)

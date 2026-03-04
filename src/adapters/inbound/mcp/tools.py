@@ -11,7 +11,9 @@ from mcp.server import Server
 from mcp.types import TextContent
 
 from src.adapters.outbound.git_local_adapter import GitLocalAdapter
+from src.adapters.outbound.jira_adapter import _build_field_display_names
 from src.configuration.container import build_container
+from src.domain.jira import JiraProjectConfig
 from src.domain.wiki_workflow import extract_jira_issue_keys, get_wiki_date_for_issue
 
 logger = logging.getLogger(__name__)
@@ -153,6 +155,69 @@ def _validate_repository_path(
         f"보안 정책에 따라 `GIT_REPOSITORIES`에 등록된 경로만 허용됩니다.\n\n"
         f"**등록된 경로:** {repos_list}\n"
     )
+
+
+# ── 설정 기반 동적 MCP 스키마 헬퍼 ──
+
+
+def _build_due_date_rules(
+    configs: list[JiraProjectConfig],
+    field_display_names: dict[str, str],
+) -> str:
+    """프로젝트 설정에서 종료일 처리 규칙 문자열을 동적 생성합니다."""
+    if not configs:
+        return "- **기타**: 종료일 설정 안 함"
+    lines: list[str] = []
+    for c in configs:
+        if c.due_date_field:
+            display = field_display_names.get(c.due_date_field)
+            field_desc = f"{display}({c.due_date_field})" if display else c.due_date_field
+            lines.append(f"- **{c.key}-***: {field_desc} 필드에 종료일 설정")
+        else:
+            lines.append(f"- **{c.key}-***: 종료일 설정 안 함")
+    lines.append("- **기타**: 종료일 설정 안 함")
+    return "\n".join(lines)
+
+
+def _build_status_descriptions(configs: list[JiraProjectConfig]) -> str:
+    """프로젝트 설정에서 상태값 목록 문자열을 동적 생성합니다."""
+    if not configs:
+        return ""
+    parts: list[str] = []
+    for c in configs:
+        if c.statuses:
+            parts.append(f"**{c.key} 프로젝트 주요 상태값:**\n" + " / ".join(c.statuses))
+    return "\n\n".join(parts)
+
+
+def _build_wiki_date_guide(
+    configs: list[JiraProjectConfig],
+    field_display_names: dict[str, str],
+) -> str:
+    """프로젝트별 Wiki 날짜 기준 안내 문자열을 동적 생성합니다."""
+    if not configs:
+        return ""
+    parts: list[str] = []
+    for c in configs:
+        if c.wiki_date_field:
+            display = field_display_names.get(c.wiki_date_field, c.wiki_date_field)
+            parts.append(f"{c.key}: {display}")
+    if not parts:
+        return ""
+    return f"\n> 프로젝트별 Wiki 날짜 기준: {', '.join(parts)}\n"
+
+
+def _format_custom_fields(
+    custom_fields: dict[str, str | None],
+    field_display_names: dict[str, str],
+) -> str:
+    """커스텀 필드를 표시명으로 변환하여 마크다운 테이블 행으로 포맷팅합니다."""
+    lines: list[str] = []
+    for field_id, value in custom_fields.items():
+        if value:
+            display_name = field_display_names.get(field_id, field_id)
+            lines.append(f"| **{display_name}** | {value} |")
+    return "\n".join(lines)
 
 
 # ── 스마트 Diff 필터링 ──
@@ -314,6 +379,12 @@ def register_tools(app: Server) -> None:
             logger.info("환경: %s", container.settings.app_env)
             logger.info("=" * 60)
 
+            # 설정 기반 헬퍼 (커스텀 필드 표시명 등)
+            project_configs = container.settings.jira_project_configs
+            configs_by_key: dict[str, JiraProjectConfig] = {c.key: c for c in project_configs}
+            project_keys = [c.key for c in project_configs]
+            field_display_names = _build_field_display_names(project_configs)
+
             if name == "get_jira_issue":
                 # 특정 이슈 조회 (key로)
                 key = arguments.get("key")
@@ -338,6 +409,14 @@ def register_tools(app: Server) -> None:
                 formatted_text += f"| **담당자** | {result['assignee']} |\n"
                 formatted_text += f"| **유형** | {result['issuetype']} |\n"
                 formatted_text += f"| **링크** | {result['url']} |\n"
+
+                # 커스텀 필드 표시 (표시명으로 변환)
+                custom_fields_text = _format_custom_fields(
+                    result.get("custom_fields", {}),
+                    field_display_names,
+                )
+                if custom_fields_text:
+                    formatted_text += custom_fields_text + "\n"
 
                 if result.get('description'):
                     desc = result['description'].strip()
@@ -392,6 +471,14 @@ def register_tools(app: Server) -> None:
                     formatted_text += f"| **담당자** | {issue['assignee']} |\n"
                     formatted_text += f"| **유형** | {issue['issuetype']} |\n"
                     formatted_text += f"| **링크** | {issue['url']} |\n"
+
+                    # 커스텀 필드 표시 (표시명으로 변환)
+                    custom_fields_text = _format_custom_fields(
+                        issue.get("custom_fields", {}),
+                        field_display_names,
+                    )
+                    if custom_fields_text:
+                        formatted_text += custom_fields_text + "\n"
 
                     # 설명 (있는 경우)
                     if issue.get('description'):
@@ -533,7 +620,7 @@ def register_tools(app: Server) -> None:
                     formatted_text += f"| **상태** | {ji['status']} |\n"
                     formatted_text += f"| **유형** | {ji['issuetype']} |\n"
                     formatted_text += f"| **담당자** | {ji['assignee']} |\n"
-                    wiki_date = get_wiki_date_for_issue(ji)
+                    wiki_date = get_wiki_date_for_issue(ji, configs_by_key)
                     if wiki_date:
                         formatted_text += f"| **기준일** | {wiki_date} |\n"
                     if ji.get('description'):
@@ -677,7 +764,7 @@ def register_tools(app: Server) -> None:
 
                     # Jira 이슈키 자동 감지
                     all_text = f"{branch_name}\n{diff_result.commits_raw}"
-                    detected_keys = extract_jira_issue_keys(all_text)
+                    detected_keys = extract_jira_issue_keys(all_text, project_keys)
 
                     if detected_keys:
                         formatted_text += f"\n## 📌 감지된 Jira 이슈키\n\n"
@@ -794,7 +881,7 @@ def register_tools(app: Server) -> None:
 
                     # Jira 이슈키 자동 감지
                     all_text = f"{branch_name}\n{diff_result.commits_raw}"
-                    detected_keys = extract_jira_issue_keys(all_text)
+                    detected_keys = extract_jira_issue_keys(all_text, project_keys)
                     if detected_keys:
                         formatted_text += f"## 📌 감지된 Jira 이슈키\n\n**{', '.join(detected_keys)}**\n\n"
 
@@ -873,9 +960,11 @@ def register_tools(app: Server) -> None:
                     formatted_text += "| 이슈키 | 제목 | 상태 | 담당자 | 기준일 |\n"
                     formatted_text += "|--------|------|------|--------|--------|\n"
                     for ji in session.jira_issues:
-                        wiki_date = get_wiki_date_for_issue(ji)
+                        wiki_date = get_wiki_date_for_issue(ji, configs_by_key)
                         formatted_text += f"| [{ji['key']}]({ji['url']}) | {ji['summary']} | {ji['status']} | {ji['assignee']} | {wiki_date or '-'} |\n"
-                    formatted_text += f"\n> BNFDEV: 종료일(customfield_10833) 기준, BNFMT: 생성일(created) 기준\n"
+                    wiki_date_guide = _build_wiki_date_guide(project_configs, field_display_names)
+                    if wiki_date_guide:
+                        formatted_text += wiki_date_guide
 
                 formatted_text += f"\n### 📋 변경 내용 요약\n\n{session.change_summary}\n"
                 formatted_text += f"\n### 👁️ 프리뷰 (일부)\n\n```html\n{preview_text}\n...\n```\n"
@@ -1208,6 +1297,13 @@ def register_tools(app: Server) -> None:
     async def list_tools():
         from mcp.types import Tool
 
+        # 설정 기반 동적 Tool description 생성
+        container = build_container()
+        _configs = container.settings.jira_project_configs
+        _display_names = _build_field_display_names(_configs)
+        due_date_rules = _build_due_date_rules(_configs, _display_names)
+        status_descriptions = _build_status_descriptions(_configs)
+
         return [
             Tool(
                 name="get_jira_issue",
@@ -1272,15 +1368,13 @@ def register_tools(app: Server) -> None:
             ),
             Tool(
                 name="complete_jira_issue",
-                description="""Jira 이슈를 완료 처리합니다.
+                description=f"""Jira 이슈를 완료 처리합니다.
 
 이슈 프로젝트와 유형을 자동으로 확인하여 적절한 완료 상태로 전환하고,
 이슈 키 프리픽스에 따라 종료일을 설정합니다.
 
 **종료일 처리 규칙 (이슈 키 프리픽스별):**
-- **BNFDEV-***: customfield_10833 필드에 종료일 설정
-- **BNFMT-***: 종료일 설정 안 함
-- **기타**: duedate 필드에 종료일 설정
+{due_date_rules}
 
 **완료 상태 우선순위 (이슈에서 전환 가능한 상태 기준):**
 - 배포완료(BNF) → DONE(BNF) → 검수완료(BNF) → 개발완료(BNF) → 답변완료(BNF) → 완료(개발) → 완료""",
@@ -1301,18 +1395,13 @@ def register_tools(app: Server) -> None:
             ),
             Tool(
                 name="transition_jira_issue",
-                description="""Jira 이슈 상태를 원하는 값으로 전환합니다.
+                description=f"""Jira 이슈 상태를 원하는 값으로 전환합니다.
 
 해당 이슈에서 실제로 전환 가능한 상태 목록 안에서만 동작합니다.
 
-**BNFDEV 프로젝트 주요 상태값:**
-할일 / 기획/설계(BNF) / 개발(BNF) / 기획/설계 완료(BNF) / 설계검수(BNF) /
-개발완료(BNF) / 패치대기(BNF) / 운영검수(BNF) / 검수완료(BNF) / DONE(BNF) /
-배포완료(BNF) / 보류(BNF) / 할일(개발) / 진행중(개발) / 완료(개발)
+{status_descriptions}""" if status_descriptions else """Jira 이슈 상태를 원하는 값으로 전환합니다.
 
-**BNFMT 프로젝트 주요 상태값:**
-할일(BNF) / 개발접수(BNF) / 처리중(BNF) / 답변완료(BNF) /
-개발(BNF) / 기획/설계(BNF) / 운영검수(BNF) / 배포완료(BNF)""",
+해당 이슈에서 실제로 전환 가능한 상태 목록 안에서만 동작합니다.""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1482,7 +1571,7 @@ repository_path 미지정 시 GIT_REPOSITORIES에서 자동 탐지.""",
                         "jira_issue_keys": {
                             "type": "string",
                             "description": "관련 Jira 이슈 키 목록 (콤마 구분, 예: 'BNFDEV-1234,BNFDEV-1235'). "
-                                           "포함 시 Jira 이슈 내용이 Wiki에 추가되고, 프로젝트별 날짜(BNFDEV:종료일, BNFMT:생성일)가 Wiki 경로(년/월)에 반영됩니다. "
+                                           "포함 시 Jira 이슈 내용이 Wiki에 추가되고, 프로젝트별 날짜 기준이 Wiki 경로(년/월)에 반영됩니다. "
                                            "생략 시 Jira 이슈 내용 없이 진행",
                         },
                         "diff_stat": {

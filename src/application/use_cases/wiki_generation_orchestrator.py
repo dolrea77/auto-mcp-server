@@ -10,6 +10,7 @@ from src.application.ports.jira_port import JiraPort
 from src.application.ports.wiki_port import WikiPort
 from src.application.ports.wiki_session_store_port import WikiSessionStorePort
 from src.application.services.template_renderer import TemplateRenderer
+from src.domain.jira import JiraProjectConfig
 from src.domain.wiki import WikiPageCreationResult
 from src.domain.wiki_workflow import (
     APPROVAL_TOKEN_TTL_MINUTES,
@@ -52,6 +53,7 @@ class WikiGenerationOrchestrator:
         root_page_id: str,
         space_key: str,
         jira_port: JiraPort | None = None,
+        project_configs: list[JiraProjectConfig] | None = None,
     ):
         self._wiki = wiki_port
         self._sessions = session_store
@@ -60,6 +62,9 @@ class WikiGenerationOrchestrator:
         self._root_page_id = root_page_id
         self._space_key = space_key
         self._jira = jira_port
+        configs = project_configs or []
+        self._configs_by_key: dict[str, JiraProjectConfig] = {c.key: c for c in configs}
+        self._project_keys: list[str] = [c.key for c in configs]
 
     def _transition(self, session: WikiSession, target: WorkflowState) -> None:
         allowed = _TRANSITIONS.get(session.state, set())
@@ -107,7 +112,7 @@ class WikiGenerationOrchestrator:
 
         # 프로젝트별 날짜 기준으로 resolution_date 결정 (명시되지 않은 경우)
         if not resolution_date and session.jira_issues:
-            wiki_date = get_wiki_date_for_issue(session.jira_issues[0])
+            wiki_date = get_wiki_date_for_issue(session.jira_issues[0], self._configs_by_key)
             if wiki_date:
                 session.resolution_date = wiki_date
 
@@ -162,7 +167,7 @@ class WikiGenerationOrchestrator:
 
             # 프로젝트별 날짜 기준으로 base_date 업데이트 (년/월 경로 결정용)
             if session.jira_issues:
-                wiki_date = get_wiki_date_for_issue(session.jira_issues[0])
+                wiki_date = get_wiki_date_for_issue(session.jira_issues[0], self._configs_by_key)
                 if wiki_date:
                     session.base_date = wiki_date
 
@@ -361,7 +366,7 @@ class WikiGenerationOrchestrator:
                 "JIRA_STATUS": session.jira_issues[0]["status"] if has_jira_issues else "",
                 "JIRA_ISSUETYPE": session.jira_issues[0]["issuetype"] if has_jira_issues else "",
                 "JIRA_URL": session.jira_issues[0]["url"] if has_jira_issues else "",
-                "JIRA_WIKI_DATE": get_wiki_date_for_issue(session.jira_issues[0]) if has_jira_issues else "",
+                "JIRA_WIKI_DATE": get_wiki_date_for_issue(session.jira_issues[0], self._configs_by_key) if has_jira_issues else "",
                 "JIRA_DESCRIPTION_HTML": Markup(jira_description_html),
                 "HAS_JIRA_DETAIL": has_jira_issues,
             }
@@ -406,19 +411,18 @@ class WikiGenerationOrchestrator:
                         "url": issue.url,
                         "description": issue.description or "",
                         "created": issue.created or "",
-                        "custom_end_date": issue.custom_end_date or "",
+                        "custom_fields": {k: v or "" for k, v in issue.custom_fields.items()},
                     })
             except Exception as e:
                 logger.warning("Jira 이슈 조회 실패 (%s): %s", key, e)
 
-    @staticmethod
-    def _build_jira_issues_html(jira_issues: list[dict]) -> str:
+    def _build_jira_issues_html(self, jira_issues: list[dict]) -> str:
         """Jira 이슈 목록을 HTML 테이블 행으로 변환 (Workflow B용)."""
         if not jira_issues:
             return ""
         rows = []
         for issue in jira_issues:
-            wiki_date = get_wiki_date_for_issue(issue)
+            wiki_date = get_wiki_date_for_issue(issue, self._configs_by_key)
             rows.append(
                 f"<tr>"
                 f'<td><a href="{html.escape(issue["url"], quote=True)}">'

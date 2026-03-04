@@ -46,6 +46,7 @@ def build_container() -> Container:
         base_url=settings.jira_base_url,
         user=settings.user_id,
         password=settings.user_password,
+        project_configs=settings.jira_project_configs,
     )
 
     wiki_adapter = WikiAdapter(
@@ -113,6 +114,7 @@ def build_container() -> Container:
         root_page_id=settings.wiki_issue_root_page_id,
         space_key=settings.wiki_issue_space_key,
         jira_port=jira_adapter,
+        project_configs=settings.jira_project_configs,
     )
 
     # 템플릿 핫 리로드
