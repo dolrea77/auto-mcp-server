@@ -509,15 +509,32 @@ jql: "assignee = currentUser() AND status = '진행중'"
 
 **모든 Wiki 생성 및 수정은 반드시 사용자 승인이 필요합니다!**
 
-1. **준비 단계**: `create_wiki_issue_page`, `create_wiki_page_with_content`, `create_wiki_custom_page`, 또는 `update_wiki_page` 호출
-   - 즉시 생성/수정되지 않음
-   - 프리뷰 + 승인 토큰 반환
-   - 상태: `WAIT_APPROVAL`
+```mermaid
+sequenceDiagram
+    actor User as 사용자
+    participant Claude
+    participant MCP as MCP Server
+    participant Wiki as Confluence
 
-2. **승인 단계**: `approve_wiki_generation` 호출
-   - 세션 ID + 승인 토큰 일치 시에만 생성/수정
-   - 실제 Wiki 페이지 생성 또는 수정
-   - 상태: `DONE`
+    User->>Claude: Wiki 생성/수정 요청
+    Claude->>MCP: create_wiki_*_page<br/>또는 update_wiki_page
+    MCP-->>Claude: 프리뷰 + session_id<br/>+ approval_token
+    Note over MCP: 상태: WAIT_APPROVAL
+
+    Claude->>User: 프리뷰 확인 요청
+
+    alt 승인
+        User->>Claude: 승인
+        Claude->>MCP: approve_wiki_generation<br/>(session_id, approval_token)
+        MCP->>Wiki: 페이지 생성/수정
+        Wiki-->>MCP: 완료
+        MCP-->>Claude: 페이지 URL 반환
+        Note over MCP: 상태: DONE
+    else 거절
+        User->>Claude: 거절
+        Note over MCP: 세션 만료 (30분 TTL)
+    end
+```
 
 > **참고:** 페이지 **조회** (`get_wiki_page`)는 승인 없이 즉시 결과를 반환합니다.
 
@@ -710,12 +727,16 @@ Claude에게: "Wiki 생성 세션 상태 확인해줘"
 
 **Upsert 동작 흐름:**
 
-| 시나리오 | `project_name` | 동일 제목 페이지 | 결과 |
-|---------|---------------|-----------------|------|
-| 첫 번째 프로젝트 | `project-a` | 없음 | 새 페이지 생성 |
-| 두 번째 프로젝트 | `project-b` | 있음 | 기존 페이지에 섹션 추가 |
-| 단일 프로젝트 (기존 방식) | 생략 | 없음 | 새 페이지 생성 |
-| 단일 프로젝트 (기존 방식) | 생략 | 있음 | 에러 발생 (하위호환) |
+```mermaid
+flowchart TD
+    A["Wiki 생성 도구 호출"] --> B{"project_name 지정?"}
+    B -->|"지정"| C{"동일 제목 페이지 존재?"}
+    B -->|"생략"| D{"동일 제목 페이지 존재?"}
+    C -->|"없음"| E["새 페이지 생성"]
+    C -->|"있음"| F["기존 페이지에<br/>프로젝트 섹션 추가"]
+    D -->|"없음"| G["새 페이지 생성"]
+    D -->|"있음"| H["에러 발생<br/>(하위호환)"]
+```
 
 > **주의: 첫 번째 프로젝트부터 `project_name`을 명시하세요**
 >
@@ -795,11 +816,15 @@ Claude에게: "dev_MYPROJECT-1234 브랜치 커밋 수집해줘"
 브랜치명과 커밋 메시지에서 `JIRA_PROJECT_CONFIGS`에 등록된 프로젝트 키 패턴을 자동 감지하여 관련 Jira 이슈 키를 추출합니다.
 
 **2단계 선택 워크플로우:**
-```
-1. collect_branch_commits("dev_MYPROJECT-1234")  # 기본: include_diff=false
-2. diff 크기 확인 → 방법 A(커밋 메시지 기반) / 방법 B(diff 분석 기반) 선택
-3. 방법 B 선택 시: include_diff=true로 재호출
-4. change_summary 작성 후 create_wiki_page_with_content(...) 호출
+
+```mermaid
+flowchart TD
+    A["collect_branch_commits<br/>(include_diff=false)"] --> B{"diff 크기 확인"}
+    B -->|"소규모"| C["방법 A: 커밋 메시지 기반<br/>change_summary 작성"]
+    B -->|"대규모 — diff 분석 필요"| D["collect_branch_commits<br/>(include_diff=true)"]
+    D --> E["방법 B: diff 분석 기반<br/>change_summary 작성"]
+    C --> F["create_wiki_page_with_content"]
+    E --> F
 ```
 
 ---
@@ -863,38 +888,37 @@ KROKI_ENABLED=true
 
 #### 동작 원리
 
-```
-MCP 서버 시작 (python -m src)
-  └─ KROKI_ENABLED=true 확인
-       └─ docker start kroki (자동)
-            └─ Kroki 서버 활성화 (localhost:8000)
+```mermaid
+sequenceDiagram
+    participant MCP as MCP Server
+    participant Docker as Docker (Kroki)
 
-MCP 서버 종료
-  └─ docker stop kroki (자동)
-       └─ Docker 리소스 해제
-```
+    Note over MCP: python -m src 실행
 
-- MCP 서버가 시작될 때 Docker 컨테이너를 자동으로 켜고, 종료 시 자동으로 끕니다
-- `KROKI_ENABLED=false`이면 Docker를 건드리지 않습니다
+    alt KROKI_ENABLED=true
+        MCP->>Docker: docker start kroki
+        Docker-->>MCP: Kroki 활성화 (localhost:8000)
+        Note over MCP,Docker: 다이어그램 도구 사용 가능
+        MCP->>Docker: docker stop kroki (서버 종료 시)
+        Docker-->>MCP: 리소스 해제
+    else KROKI_ENABLED=false
+        Note over MCP: Docker 미접촉, 다이어그램 도구 비활성화
+    end
+```
 
 #### 지원 다이어그램 타입 (15종)
 
+**주요 타입:**
+
 | 타입 | 설명 | 예시 용도 |
 |------|------|-----------|
-| `mermaid` | 범용 다이어그램 (가장 인기) | 시퀀스, 플로우차트, 클래스, ER |
-| `plantuml` | UML 다이어그램 | 시퀀스, 클래스, 유스케이스 |
+| `plantuml` | UML 다이어그램 **(권장 — 가장 안정적)** | 시퀀스, 클래스, 유스케이스 |
+| `mermaid` | 범용 다이어그램 | 시퀀스, 플로우차트, 클래스, ER |
 | `c4plantuml` | C4 아키텍처 모델 | 시스템 컨텍스트, 컨테이너, 컴포넌트 |
 | `graphviz` | 그래프/네트워크 | 의존성 그래프, 상태 다이어그램 |
 | `erd` | ER 다이어그램 | DB 스키마 시각화 |
-| `ditaa` | ASCII 아트 → 다이어그램 | 간단한 아키텍처 그림 |
-| `nomnoml` | UML 스케치 스타일 | 클래스, 패키지 |
-| `svgbob` | ASCII 아트 → SVG | 텍스트 기반 그림 |
-| `vega` / `vegalite` | 데이터 시각화 | 차트, 그래프 |
-| `wavedrom` | 디지털 타이밍 다이어그램 | 하드웨어 신호 |
-| `bpmn` | 비즈니스 프로세스 모델링 | 업무 플로우 |
-| `bytefield` | 바이트/비트 필드 | 프로토콜 패킷 구조 |
-| `excalidraw` | 스케치 스타일 다이어그램 | 자유로운 화이트보드 |
-| `pikchr` | PIC 기반 다이어그램 | 기술 문서 삽화 |
+
+**기타:** `ditaa`, `nomnoml`, `svgbob`, `vega`, `vegalite`, `wavedrom`, `bpmn`, `bytefield`, `excalidraw`, `pikchr`
 
 ---
 
@@ -947,84 +971,60 @@ Claude에게: "이 다이어그램을 페이지 ID 339090255에 첨부해줘"
 
 ## 💡 사용 예시
 
-### 예시 1: Jira 이슈 완료 후 Wiki 페이지 생성
+### 예시 1: Jira 이슈 완료 + Wiki 생성 (기본 흐름)
 
 ```
 사용자: "MYPROJECT-2365 이슈 완료처리 해줘"
 → complete_jira_issue 실행
 
-Claude: "완료 처리되었습니다. Wiki 이슈 정리 페이지를 생성할까요?"
+사용자: "Wiki 이슈 정리 페이지도 만들어줘"
+→ create_wiki_issue_page → 프리뷰 반환
 
-사용자: "yes"
-→ create_wiki_issue_page 실행 (프리뷰 + 승인 토큰 반환)
-
-Claude: "프리뷰를 확인해주세요. 승인할까요?"
-
-사용자: "yes"
-→ approve_wiki_generation 실행 (실제 Wiki 페이지 생성)
-
-Claude: "Wiki 페이지 생성 완료: https://confluence.../..."
+사용자: "승인"
+→ approve_wiki_generation → Wiki 페이지 생성 완료
 ```
+
+> 커스텀 페이지(`create_wiki_custom_page`), 브랜치 커밋 기반(`create_wiki_page_with_content`) 생성도 동일한 **프리뷰 → 승인** 흐름입니다.
 
 ---
 
-### 예시 2: 브랜치 커밋으로 Wiki 페이지 생성
+### 예시 2: 브랜치 커밋 수집 + Jira 이슈 포함 Wiki 생성
 
 ```
-사용자: "project-a의 dev_feature 브랜치 커밋 수집해줘"
-→ collect_branch_commits 실행
-
-Claude: "12개 커밋 수집 완료. 커밋 목록: ..."
-
-사용자: "커밋 내용 분석해서 Wiki 페이지 만들어줘"
-→ 커밋 분석 + create_wiki_page_with_content 실행 (프리뷰)
-
-Claude: "프리뷰를 확인해주세요. 승인할까요?"
-
-사용자: "yes"
-→ approve_wiki_generation 실행
-
-Claude: "Wiki 페이지 생성 완료"
-```
-
----
-
-### 예시 3: 여러 Jira 이슈 포함 Wiki 생성
-
-```
-사용자: "dev_feature 브랜치 커밋 수집하고, MYPROJECT-100,MYPROJECT-101 이슈 내용 포함해서 Wiki 만들어줘"
-
+사용자: "dev_feature 브랜치 커밋 수집하고, MYPROJECT-100,MYPROJECT-101 이슈 포함해서 Wiki 만들어줘"
 → collect_branch_commits("dev_feature")
-→ 커밋 분석
-→ create_wiki_page_with_content(
-    page_title="dev_feature",
-    commit_list="...",
-    change_summary="...",
-    jira_issue_keys="MYPROJECT-100,MYPROJECT-101"
-  )
+→ create_wiki_page_with_content(commit_list="...", jira_issue_keys="MYPROJECT-100,MYPROJECT-101")
+→ 프리뷰 (Jira 이슈 2건 포함)
 
-Claude: "프리뷰 - Jira 이슈 2건 포함됨. 승인할까요?"
-
-사용자: "yes"
-→ approve_wiki_generation
-
-Claude: "Wiki 페이지 생성 완료"
+사용자: "승인"
+→ approve_wiki_generation → 생성 완료
 ```
 
 ---
 
-### 예시 4: 커스텀 Wiki 페이지 생성
+### 예시 3: Wiki 페이지 조회 및 수정
 
 ```
-사용자: "'AI' 페이지 아래에 회의록 페이지 만들어줘"
-→ create_wiki_custom_page 실행 (프리뷰 + 승인 토큰 반환)
+사용자: "AI 페이지에 새 섹션 추가해줘"
+→ get_wiki_page(page_title="AI") — 현재 내용 조회 (승인 불필요)
+→ update_wiki_page(page_title="AI", body=수정된HTML) → 프리뷰 반환
 
-Claude: "프리뷰를 확인해주세요. 승인할까요?"
+사용자: "승인"
+→ approve_wiki_generation → 수정 완료
+```
 
-사용자: "yes"
-→ approve_wiki_generation 실행
+---
 
-Claude: "Wiki 페이지 생성 완료: https://confluence.../..."
+### 예시 4: 멀티프로젝트 Wiki 병합
+
+```
+# 1단계: project-a
+→ create_wiki_issue_page(issue_key="MYPROJECT-1234", project_name="project-a")
+→ approve → 새 페이지 생성
+
+# 2단계: project-b (동일 이슈)
+→ create_wiki_issue_page(issue_key="MYPROJECT-1234", project_name="project-b")
+→ approve → 기존 페이지에 프로젝트 섹션 추가
 ```
 
 ---
@@ -1040,293 +1040,49 @@ Claude: "15개 커밋, 8개 파일 변경. 주요 변경사항: ..."
 
 ---
 
-### 예시 6: Wiki 페이지 조회
-
-```
-사용자: "AI Wiki 페이지 내용 보여줘"
-→ get_wiki_page(page_title="AI") 호출
-
-Claude: "페이지 내용을 조회했습니다:
-- 페이지 ID: 339090255
-- 제목: AI
-- 버전: 12
-- 본문: (HTML 내용을 파싱하여 정리해서 보여줌)"
-```
-
----
-
-### 예시 7: Wiki 페이지 수정 (내용 추가)
-
-```
-사용자: "AI 페이지에 새 섹션 추가해줘"
-
-→ get_wiki_page(page_title="AI") 호출 (현재 내용 조회)
-→ Claude가 기존 HTML에 새 섹션 추가하여 수정된 HTML 작성
-→ update_wiki_page(page_title="AI", body=수정된HTML) 호출
-
-Claude: "수정 프리뷰를 확인해주세요. 승인할까요?"
-
-사용자: "yes"
-→ approve_wiki_generation(session_id, approval_token) 호출
-
-Claude: "Wiki 페이지 수정 완료: https://confluence.../..."
-```
-
----
-
-### 예시 8: 멀티프로젝트 Wiki 병합
-
-하나의 Jira 이슈가 `project-a`와 `project-b` 두 프로젝트에 걸쳐 수정된 경우:
-
-```
-# 1단계: 첫 번째 프로젝트 (project-a)
-사용자: "project-a의 dev_MYPROJECT-1234 커밋으로 Wiki 만들어줘"
-→ create_wiki_issue_page(
-    issue_key="MYPROJECT-1234",
-    issue_title="로그인 버그 수정",
-    commit_list="...",
-    project_name="project-a"
-  )
-→ approve_wiki_generation
-→ Wiki 페이지 생성 완료: "[MYPROJECT-1234] 로그인 버그 수정"
-
-# 2단계: 두 번째 프로젝트 (project-b)
-사용자: "project-b의 dev_MYPROJECT-1234 커밋도 같은 Wiki에 추가해줘"
-→ create_wiki_issue_page(
-    issue_key="MYPROJECT-1234",
-    issue_title="로그인 버그 수정",
-    commit_list="...",
-    project_name="project-b"
-  )
-→ 기존 페이지 발견 → 프로젝트 섹션 추가 모드로 전환
-→ approve_wiki_generation
-→ 기존 페이지에 project-b 섹션 추가 완료
-```
-
-결과: 하나의 Wiki 페이지에 두 프로젝트의 변경사항이 시각적으로 구분되어 통합됩니다.
-
----
-
-### 예시 9: 동일 브랜치가 여러 저장소에 존재하는 경우
+### 예시 6: 동일 브랜치가 여러 저장소에 존재하는 경우
 
 ```
 사용자: "dev_MYPROJECT-1234 브랜치 커밋 수집해줘"
-→ collect_branch_commits("dev_MYPROJECT-1234") 실행
-
-Claude: "브랜치가 여러 저장소에서 발견됨
-
-| # | 프로젝트 | 경로 |
-| 1 | project-a | /Users/.../project-a |
-| 2 | project-b | /Users/.../project-b |
-
-repository_path 파라미터를 지정하여 저장소를 선택하세요."
+→ 여러 저장소에서 발견 → disambiguation 메시지 반환
 
 사용자: "project-b 프로젝트의 커밋을 수집해줘"
-→ collect_branch_commits("dev_MYPROJECT-1234", repository_path="/Users/.../project-b") 실행
-
-Claude: "8개 커밋 수집 완료. ..."
+→ collect_branch_commits("dev_MYPROJECT-1234", repository_path="/Users/.../project-b")
 ```
 
-> **팁:** 하나의 저장소에만 해당 브랜치가 존재하면 자동 선택됩니다.
-> 여러 저장소에 동일 브랜치가 있을 때만 disambiguation 메시지가 표시됩니다.
+> 하나의 저장소에만 브랜치가 존재하면 자동 선택됩니다.
 
 ---
 
-### 예시 10: 다이어그램 렌더링 (미리보기)
+### 예시 7: 다이어그램 생성 + Wiki 첨부
 
 ```
-사용자: "Mermaid로 로그인 흐름 시퀀스 다이어그램 그려줘"
-→ generate_diagram 실행
-
-Claude: "✅ 다이어그램 렌더링 완료 (mermaid, svg, 2,340 bytes)
-Wiki 페이지에 첨부하려면 attach_diagram_to_wiki 도구를 사용하세요."
-```
-
----
-
-### 예시 11: Wiki 생성 후 다이어그램 첨부
-
-```
-# 1단계: Wiki 페이지 생성
-사용자: "MYPROJECT-1234 Wiki 이슈 정리 페이지 만들어줘"
-→ create_wiki_issue_page 실행 (프리뷰)
+사용자: "PlantUML로 클래스 다이어그램 만들어서 페이지 ID 339090255에 첨부해줘"
+→ attach_diagram_to_wiki(page_id="339090255", diagram_type="plantuml", code="...")
+→ 프리뷰 반환 (파일명, 크기, 삽입 위치)
 
 사용자: "승인"
-→ approve_wiki_generation 실행 (페이지 생성 완료, page_id 반환)
-
-# 2단계: 다이어그램 첨부
-사용자: "이 페이지에 시스템 아키텍처 다이어그램도 추가해줘"
-→ attach_diagram_to_wiki 실행 (프리뷰)
-
-Claude: "📋 다이어그램 Wiki 첨부 프리뷰
-- 대상 페이지: MYPROJECT-1234 (id: ...)
-- 첨부파일: architecture.svg
-- 삽입 위치: append"
-
-사용자: "승인"
-→ approve_wiki_generation 실행 (첨부 완료)
+→ approve_wiki_generation → 첨부 완료
 ```
 
----
-
-### 예시 12: PlantUML 클래스 다이어그램 Wiki 첨부
-
-```
-사용자: "PlantUML로 우리 시스템의 클래스 다이어그램 만들어서 페이지 ID 339090255에 첨부해줘"
-→ attach_diagram_to_wiki(
-    page_id="339090255",
-    diagram_type="plantuml",
-    code="@startuml\nclass User {...}\n@enduml",
-    filename="class-diagram.svg",
-    caption="시스템 클래스 다이어그램"
-  )
-
-Claude: "📋 다이어그램 프리뷰 — class-diagram.svg (2,340 bytes)"
-
-사용자: "승인"
-→ approve_wiki_generation 실행
-Claude: "✅ 다이어그램 첨부 완료"
-```
+> `generate_diagram`으로 미리보기만 할 수도 있습니다. Wiki 첨부 없이 SVG/PNG 렌더링 결과만 확인합니다.
 
 ---
 
 ## 🛠 문제 해결
 
-### 1. Jira 인증 실패
+| 증상 | 원인 | 해결 |
+|------|------|------|
+| `Jira 인증 실패` | 잘못된 ID/비밀번호 | `.env.local`의 `USER_ID`, `USER_PASSWORD` 확인. Cloud는 **API 토큰** 필요 |
+| `Wiki 설정이 필요합니다` | Wiki 환경변수 누락 | `WIKI_BASE_URL`, `WIKI_ISSUE_SPACE_KEY`, `WIKI_ISSUE_ROOT_PAGE_ID` 설정 |
+| `브랜치 커밋 수집 실패` | 브랜치 미존재 / 저장소 미등록 | `git branch -a`로 확인, `repository_path` 지정, `GIT_REPOSITORIES` 확인 |
+| `Kroki Docker 시작 실패` | 컨테이너 미생성 / Docker 미실행 | Docker Desktop 실행 확인 → `docker create --name kroki -p 8000:8000 yuzutech/kroki` |
+| `다이어그램 기능 비활성화` | 환경변수 미설정 | `.env.local`에 `KROKI_ENABLED=true` 추가 후 재시작 |
+| `Kroki 서버 연결 실패` | 컨테이너 중지 / 포트 충돌 | `docker start kroki` 실행, `lsof -i :8000`으로 포트 확인 |
+| `Kroki 렌더링 실패 (400)` | 다이어그램 문법 오류 | 소스 코드 문법 및 지원 타입 확인 |
+| MCP 서버가 보이지 않음 | 경로 오류 / 미등록 | `claude mcp list`로 확인, Python 경로 및 `PYTHONPATH` 검증 |
 
-**증상:**
-```
-❌ Jira 인증 실패: 사용자명 또는 비밀번호를 확인하세요
-```
-
-**해결 방법:**
-1. `.env.local` 파일의 `USER_ID`, `USER_PASSWORD` 확인
-2. Atlassian Cloud 사용 시 **API 토큰** 사용 확인 (비밀번호 아님)
-3. `JIRA_BASE_URL`이 올바른지 확인 (포트 포함, 마지막 `/` 제거)
-
----
-
-### 2. Wiki 설정 오류
-
-**증상:**
-```
-⚠️ Wiki 설정이 필요합니다
-```
-
-**해결 방법:**
-1. `.env.local` 파일에 다음 변수 추가:
-   - `WIKI_BASE_URL`
-   - `WIKI_ISSUE_SPACE_KEY`
-   - `WIKI_ISSUE_ROOT_PAGE_ID`
-2. Confluence 페이지 ID 확인: 페이지 우측 상단 `...` → `페이지 정보 보기`
-
----
-
-### 3. Git 커밋 수집 실패
-
-**증상:**
-```
-❌ 브랜치 커밋 수집 실패
-브랜치가 존재하지 않거나 로컬 git 저장소에 문제가 있을 수 있습니다.
-```
-
-**해결 방법:**
-1. 브랜치명 확인: `git branch -a` 실행
-2. `repository_path` 파라미터로 정확한 git 저장소 경로 지정
-3. `GIT_REPOSITORIES` 환경 변수에 저장소가 등록되어 있는지 확인
-
----
-
-### 4. Docker 관련 오류 (다이어그램 기능)
-
-**증상:** MCP 서버 시작 시 Docker 관련 경고 로그
-```
-Kroki Docker 시작 실패: ...
-```
-
-**해결 방법:**
-1. Docker Desktop이 실행 중인지 확인
-2. 컨테이너가 생성되어 있는지 확인: `docker ps -a | grep kroki`
-3. 미생성 시: `docker create --name kroki -p 8000:8000 yuzutech/kroki`
-4. Docker가 설치되지 않은 경우: `KROKI_ENABLED=false`로 설정하면 다이어그램 기능만 비활성화됩니다
-
----
-
-### 5. MCP 서버가 Claude에서 보이지 않음
-
-**Claude Desktop:**
-1. `claude_desktop_config.json` 파일 경로 확인: `~/Library/Application Support/Claude/claude_desktop_config.json`
-2. `cwd` 경로가 **절대 경로**인지 확인
-3. Claude Desktop 완전히 재시작 (종료 후 재실행)
-
-**Claude Code:**
-```bash
-# MCP 서버 목록 확인
-claude mcp list
-
-# 재등록
-claude mcp remove auto-mcp-server
-claude mcp add auto-mcp-server \
-  -e APP_ENV=local \
-  -e PYTHONPATH=/auto-mcp-server프로젝트경로/auto-mcp-server \
-  -- /유저위치/miniconda3/envs/가상환경이름/bin/python -m src
-```
-
-**가상환경 관련 문제:**
-1. Python 경로가 실제 존재하는지 확인: `ls /유저위치/miniconda3/envs/가상환경이름/bin/python`
-2. `PYTHONPATH`가 auto-mcp-server 프로젝트 루트를 가리키는지 확인
-3. 가상환경에 의존성이 설치되었는지 확인: 해당 Python으로 `python -c "import mcp"` 실행
-
----
-
-### 6. 다이어그램 기능 오류 (Kroki/Docker)
-
-**증상:**
-```
-❌ 다이어그램 기능 비활성화
-KROKI_ENABLED=true 환경변수를 설정하고 Docker 컨테이너를 생성해주세요
-```
-
-**해결 방법:**
-1. `.env.local`에 `KROKI_ENABLED=true` 추가
-2. Docker 컨테이너 생성: `docker create --name kroki -p 8000:8000 yuzutech/kroki`
-3. MCP 서버 재시작
-
-**증상:**
-```
-Kroki 서버 연결 실패: http://localhost:8000
-Docker 컨테이너가 실행 중인지 확인하세요.
-```
-
-**해결 방법:**
-1. Docker Desktop이 실행 중인지 확인
-2. 수동으로 컨테이너 상태 확인: `docker ps -a | grep kroki`
-3. 수동 시작 테스트: `docker start kroki`
-4. 포트 충돌 확인: `lsof -i :8000` (다른 서비스가 8000 포트를 사용 중일 수 있음)
-5. 포트 변경 시 `.env.local`의 `KROKI_URL`도 맞춰서 수정
-
-**증상:**
-```
-Kroki 렌더링 실패 (HTTP 400): ...
-```
-
-**해결 방법:**
-- 다이어그램 소스 코드 문법 오류 확인
-- 지원되는 다이어그램 타입인지 확인 (15종)
-
----
-
-### 7. 로그 확인
-
-서버 실행 중 문제가 발생하면 로그를 확인하세요.
-
-```bash
-tail -f logs/mcp-server.log
-```
-
-로그 파일 위치: `logs/mcp-server.log`
-- 최대 크기: 10MB
-- 백업 파일: 5개 (자동 순환)
+**로그 확인:** `tail -f logs/mcp-server.log` (10MB, 5개 백업 로테이션)
 
 ---
 
@@ -1336,21 +1092,47 @@ tail -f logs/mcp-server.log
 
 Hexagonal Architecture (Ports & Adapters) 기반
 
-```
-[MCP Inbound]  ← Claude
-     ↓
-[Use Cases] ↔ [Ports] ↔ [Outbound Adapters]
-     ↓
- [Domain]
-```
+```mermaid
+graph TB
+    Claude["Claude Desktop / Claude Code"]
 
-| 레이어 | 위치 | 역할 |
-|---|---|---|
-| Domain | `src/domain/` | 핵심 도메인 엔티티 |
-| Application | `src/application/` | Port 인터페이스, Use Case |
-| Inbound | `src/adapters/inbound/mcp/` | MCP Tool 핸들러 |
-| Outbound | `src/adapters/outbound/` | 외부 서비스 어댑터 |
-| Config | `src/configuration/` | DI Container, Settings |
+    subgraph MCP Server
+        direction TB
+        Inbound["MCP Inbound<br/><code>adapters/inbound/mcp/tools.py</code>"]
+
+        subgraph Application
+            direction LR
+            UseCases["Use Cases<br/><code>application/use_cases/</code>"]
+            Ports["Ports<br/><code>application/ports/</code>"]
+            Services["Services<br/><code>application/services/</code>"]
+        end
+
+        Domain["Domain<br/><code>domain/</code>"]
+
+        subgraph Outbound["Outbound Adapters"]
+            direction LR
+            JiraAdapter["Jira API<br/><code>jira_adapter</code>"]
+            WikiAdapter["Confluence API<br/><code>wiki_adapter</code>"]
+            GitAdapter["Local Git<br/><code>git_local_adapter</code>"]
+            KrokiAdapter["Kroki<br/><code>kroki_adapter</code>"]
+        end
+
+        Config["Configuration<br/><code>configuration/</code><br/>DI Container, Settings"]
+    end
+
+    Claude -- "stdin/stdout" --> Inbound
+    Inbound --> UseCases
+    UseCases --> Ports
+    UseCases --> Services
+    UseCases --> Domain
+    Ports --> JiraAdapter
+    Ports --> WikiAdapter
+    Ports --> GitAdapter
+    Ports --> KrokiAdapter
+    Config -.-> Inbound
+    Config -.-> UseCases
+    Config -.-> Outbound
+```
 
 ---
 
