@@ -82,19 +82,6 @@ def _check_wiki_base_url(settings) -> list[TextContent] | None:
     return None
 
 
-def _build_diagram_image_html(filename: str, caption: str = "") -> str:
-    """Confluence Storage Format의 이미지 참조 HTML을 생성한다."""
-    escaped_filename = html.escape(filename, quote=True)
-    image_tag = (
-        '<ac:image ac:align="center" ac:layout="center">'
-        f'<ri:attachment ri:filename="{escaped_filename}" />'
-        '</ac:image>'
-    )
-    if caption:
-        escaped_caption = html.escape(caption)
-        return f'{image_tag}\n<p style="text-align: center;"><em>{escaped_caption}</em></p>'
-    return image_tag
-
 
 async def _detect_repository(
     branch_name: str, git_repos: dict[str, str],
@@ -1401,44 +1388,35 @@ def register_tools(app: Server) -> None:
                     output_format="svg",
                 )
 
-                # 2. 첨부파일 업로드
-                await container.wiki_adapter.upload_attachment(
+                # 2. 오케스트레이터로 승인 대기 세션 생성
+                session = await container.wiki_orchestrator.start_diagram_workflow(
+                    svg_data=diagram.svg_data,
+                    content_type=diagram.content_type,
                     page_id=page_id,
                     filename=filename,
-                    data=diagram.svg_data,
-                    content_type=diagram.content_type,
-                    comment=f"Auto-generated {diagram_type} diagram",
-                )
-
-                # 3. 페이지 본문에 이미지 참조 삽입
-                image_html = _build_diagram_image_html(filename, caption)
-                page = await container.wiki_adapter.get_page_with_content(page_id)
-
-                if insert_position == "prepend":
-                    new_body = image_html + "\n" + page.body
-                else:
-                    new_body = page.body + "\n" + image_html
-
-                await container.wiki_adapter.update_page(
-                    page_id=page_id,
-                    title=page.title,
-                    body=new_body,
-                    version=page.version + 1,
-                    space_key=page.space_key,
+                    caption=caption,
+                    insert_position=insert_position,
+                    diagram_type=diagram_type,
                 )
 
                 logger.info(
-                    "✅ Tool 실행 완료: 다이어그램 Wiki 첨부 (page_id=%s, file=%s)", page_id, filename,
+                    "✅ Tool 실행 완료: 다이어그램 Wiki 첨부 프리뷰 생성 (session=%s)", session.session_id,
                 )
 
-                formatted_text = "# ✅ 다이어그램 Wiki 첨부 완료\n\n"
+                formatted_text = "# 📋 다이어그램 Wiki 첨부 프리뷰\n\n"
                 formatted_text += "| 항목 | 내용 |\n"
                 formatted_text += "|------|------|\n"
-                formatted_text += f"| **페이지** | {page.title} (id: {page_id}) |\n"
+                formatted_text += f"| **대상 페이지** | {session.page_title} (id: {page_id}) |\n"
                 formatted_text += f"| **첨부파일** | {filename} |\n"
                 formatted_text += f"| **다이어그램 타입** | {diagram_type} |\n"
+                formatted_text += f"| **파일 크기** | {len(diagram.svg_data):,} bytes |\n"
                 formatted_text += f"| **삽입 위치** | {insert_position} |\n"
-                formatted_text += f"| **페이지 URL** | {page.url} |\n"
+                if caption:
+                    formatted_text += f"| **캡션** | {caption} |\n"
+                formatted_text += "\n---\n\n"
+                formatted_text += _PREVIEW_WARNING
+                formatted_text += f"\n\n**session_id:** `{session.session_id}`\n"
+                formatted_text += f"**approval_token:** `{session.approval_token}`\n"
 
                 return [TextContent(type="text", text=formatted_text)]
 
@@ -1960,7 +1938,7 @@ body에는 수정된 전체 페이지 본문 (Confluence Storage Format HTML)을
                 name="attach_diagram_to_wiki",
                 description="다이어그램을 렌더링하여 기존 Wiki 페이지에 첨부파일로 업로드하고, "
                             "페이지 본문에 이미지를 삽입합니다.\n\n"
-                            "⚠️ 즉시 실행됩니다 (승인 프로세스 없음 - 첨부파일 업로드는 비파괴적).",
+                            "⚠️ 즉시 생성하지 않음. 프리뷰 반환 후 approve_wiki_generation으로 승인 필요.",
                 inputSchema={
                     "type": "object",
                     "properties": {

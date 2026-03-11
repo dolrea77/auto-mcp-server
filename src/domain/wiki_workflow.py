@@ -58,6 +58,7 @@ class WorkflowType(Enum):
     WORKFLOW_B = "workflow_b"
     WORKFLOW_C = "workflow_c"
     UPDATE_PAGE = "update_page"
+    ATTACH_DIAGRAM = "attach_diagram"
 
 
 class WorkflowState(Enum):
@@ -105,6 +106,14 @@ class WikiSession:
     # Update workflow specific
     update_target_page_id: str = ""    # 수정 대상 페이지 ID
     update_target_version: int = 0     # 조회 시점의 페이지 버전
+
+    # Attach Diagram workflow specific
+    diagram_svg_data: bytes = b""
+    diagram_filename: str = "diagram.svg"
+    diagram_content_type: str = "image/svg+xml"
+    diagram_caption: str = ""
+    diagram_insert_position: str = "append"
+    diagram_page_id: str = ""
 
     # Shared data
     branch_name: str = ""

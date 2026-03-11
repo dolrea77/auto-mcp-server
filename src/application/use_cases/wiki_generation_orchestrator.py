@@ -266,6 +266,39 @@ class WikiGenerationOrchestrator:
         self._sessions.save(session)
         return session
 
+    # ── Attach Diagram workflow entry point ──
+
+    async def start_diagram_workflow(
+        self,
+        svg_data: bytes,
+        content_type: str,
+        page_id: str,
+        filename: str = "diagram.svg",
+        caption: str = "",
+        insert_position: str = "append",
+        diagram_type: str = "",
+    ) -> WikiSession:
+        """다이어그램 Wiki 첨부 워크플로우 시작: 프리뷰 생성 후 승인 대기"""
+        page = await self._wiki.get_page_with_content(page_id)
+
+        session = WikiSession(
+            workflow_type=WorkflowType.ATTACH_DIAGRAM,
+            diagram_svg_data=svg_data,
+            diagram_content_type=content_type,
+            diagram_page_id=page_id,
+            diagram_filename=filename,
+            diagram_caption=caption,
+            diagram_insert_position=insert_position,
+            page_title=page.title,
+            update_target_page_id=page_id,
+            update_target_version=page.version,
+        )
+
+        self._transition(session, WorkflowState.RENDER_PREVIEW)
+        self._render_preview(session)
+        self._sessions.save(session)
+        return session
+
     # ── Approval ──
 
     async def approve(self, session_id: str, approval_token: str) -> WikiPageCreationResult:
@@ -347,6 +380,21 @@ class WikiGenerationOrchestrator:
         if session.workflow_type == WorkflowType.UPDATE_PAGE:
             # update 워크플로우는 별도 템플릿 없이 새 body를 그대로 프리뷰로 사용
             session.rendered_preview = session.content_raw
+            session.approval_token = str(uuid.uuid4())
+            session.approval_expires_at = datetime.now() + timedelta(minutes=APPROVAL_TOKEN_TTL_MINUTES)
+            self._transition(session, WorkflowState.WAIT_APPROVAL)
+            return
+
+        if session.workflow_type == WorkflowType.ATTACH_DIAGRAM:
+            svg_size = len(session.diagram_svg_data)
+            session.rendered_preview = (
+                f"다이어그램 Wiki 첨부 프리뷰\n"
+                f"- 대상 페이지: {session.page_title} (id: {session.diagram_page_id})\n"
+                f"- 첨부파일명: {session.diagram_filename}\n"
+                f"- 파일 크기: {svg_size:,} bytes\n"
+                f"- 삽입 위치: {session.diagram_insert_position}\n"
+                f"- 캡션: {session.diagram_caption or '(없음)'}"
+            )
             session.approval_token = str(uuid.uuid4())
             session.approval_expires_at = datetime.now() + timedelta(minutes=APPROVAL_TOKEN_TTL_MINUTES)
             self._transition(session, WorkflowState.WAIT_APPROVAL)
@@ -457,6 +505,10 @@ class WikiGenerationOrchestrator:
     _MAX_UPDATE_RETRIES = 3
 
     async def _create_wiki_page(self, session: WikiSession) -> WikiPageCreationResult:
+        # Attach Diagram workflow: 첨부파일 업로드 + 본문에 이미지 삽입
+        if session.workflow_type == WorkflowType.ATTACH_DIAGRAM:
+            return await self._attach_diagram(session)
+
         # Update workflow: 기존 페이지 수정
         if session.workflow_type == WorkflowType.UPDATE_PAGE:
             return await self._update_existing_page(session)
@@ -631,6 +683,49 @@ class WikiGenerationOrchestrator:
                     continue
                 raise
 
+    async def _attach_diagram(self, session: WikiSession) -> WikiPageCreationResult:
+        """다이어그램 첨부파일 업로드 + 페이지 본문에 이미지 태그 삽입"""
+        page_id = session.diagram_page_id
+        filename = session.diagram_filename
+
+        # 1. 첨부파일 업로드
+        await self._wiki.upload_attachment(
+            page_id=page_id,
+            filename=filename,
+            data=session.diagram_svg_data,
+            content_type=session.diagram_content_type,
+            comment=f"Auto-generated diagram",
+        )
+
+        # 2. 페이지 본문에 이미지 참조 삽입
+        image_html = _build_diagram_image_html(filename, session.diagram_caption)
+        page = await self._wiki.get_page_with_content(page_id)
+
+        if session.diagram_insert_position == "prepend":
+            new_body = image_html + "\n" + page.body
+        else:
+            new_body = page.body + "\n" + image_html
+
+        updated = await self._wiki.update_page(
+            page_id=page_id,
+            title=page.title,
+            body=new_body,
+            version=page.version + 1,
+            space_key=page.space_key,
+        )
+
+        logger.info(
+            "다이어그램 Wiki 첨부 완료: page_id=%s, file=%s", page_id, filename,
+        )
+
+        return WikiPageCreationResult(
+            page_id=updated.id,
+            title=updated.title,
+            url=updated.url,
+            parent_page_id="",
+            was_updated=True,
+        )
+
 
 # ── 유틸리티 함수 (기존 create_wiki_page_with_content.py에서 이동) ──
 
@@ -673,3 +768,17 @@ def _auto_summarize(commit_list: str) -> str:
         msg = parts[1] if len(parts) == 2 and len(parts[0]) >= 7 else line
         summary_lines.append(f"- {msg}")
     return "\n".join(summary_lines)
+
+
+def _build_diagram_image_html(filename: str, caption: str = "") -> str:
+    """Confluence Storage Format의 첨부 이미지 HTML을 생성합니다."""
+    escaped_filename = html.escape(filename, quote=True)
+    image_html = (
+        '<ac:image ac:align="center" ac:layout="center">'
+        f'<ri:attachment ri:filename="{escaped_filename}" />'
+        '</ac:image>'
+    )
+    if caption:
+        escaped_caption = html.escape(caption)
+        image_html += f'\n<p style="text-align: center;"><em>{escaped_caption}</em></p>'
+    return image_html
