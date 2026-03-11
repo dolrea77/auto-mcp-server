@@ -1913,7 +1913,11 @@ body에는 수정된 전체 페이지 본문 (Confluence Storage Format HTML)을
                 description="Mermaid, PlantUML 등의 다이어그램 코드를 SVG 이미지로 렌더링합니다. "
                             "렌더링된 SVG는 Wiki 페이지 첨부 또는 독립적으로 사용 가능합니다.\n\n"
                             "지원 타입: mermaid, plantuml, c4plantuml, graphviz, ditaa, erd, nomnoml, svgbob, "
-                            "vega, vegalite, wavedrom, bpmn, bytefield, excalidraw, pikchr",
+                            "vega, vegalite, wavedrom, bpmn, bytefield, excalidraw, pikchr\n\n"
+                            "권장: plantuml (가장 안정적, 기본 Kroki 이미지에 내장). "
+                            "mermaid는 별도 companion 컨테이너(kroki-mermaid) 필요로 503 에러 발생 가능.\n"
+                            "용도별 추천: 아키텍처/클래스/시퀀스 → plantuml, DB 구조 → plantuml 또는 erd, "
+                            "플로우차트 → plantuml 또는 graphviz, C4 모델 → c4plantuml",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1938,7 +1942,8 @@ body에는 수정된 전체 페이지 본문 (Confluence Storage Format HTML)을
                 name="attach_diagram_to_wiki",
                 description="다이어그램을 렌더링하여 기존 Wiki 페이지에 첨부파일로 업로드하고, "
                             "페이지 본문에 이미지를 삽입합니다.\n\n"
-                            "⚠️ 즉시 생성하지 않음. 프리뷰 반환 후 approve_wiki_generation으로 승인 필요.",
+                            "⚠️ 즉시 생성하지 않음. 프리뷰 반환 후 approve_wiki_generation으로 승인 필요.\n\n"
+                            "권장: plantuml (가장 안정적). mermaid는 별도 companion 컨테이너 필요.",
                 inputSchema={
                     "type": "object",
                     "properties": {
