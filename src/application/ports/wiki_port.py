@@ -67,3 +67,14 @@ class WikiPort(Protocol):
     ) -> WikiPage:
         """기존 페이지를 업데이트합니다. version은 현재 버전 + 1이어야 합니다."""
         ...
+
+    async def upload_attachment(
+        self,
+        page_id: str,
+        filename: str,
+        data: bytes,
+        content_type: str,
+        comment: str = "",
+    ) -> str:
+        """페이지에 첨부파일을 업로드하고 첨부파일명을 반환한다."""
+        ...

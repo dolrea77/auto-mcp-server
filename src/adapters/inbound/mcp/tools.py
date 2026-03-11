@@ -1,3 +1,4 @@
+import html
 import json
 import logging
 import os
@@ -79,6 +80,20 @@ def _check_wiki_base_url(settings) -> list[TextContent] | None:
                  "환경 변수 `WIKI_BASE_URL`을 설정해주세요."
         )]
     return None
+
+
+def _build_diagram_image_html(filename: str, caption: str = "") -> str:
+    """Confluence Storage Format의 이미지 참조 HTML을 생성한다."""
+    escaped_filename = html.escape(filename, quote=True)
+    image_tag = (
+        '<ac:image ac:align="center" ac:layout="center">'
+        f'<ri:attachment ri:filename="{escaped_filename}" />'
+        '</ac:image>'
+    )
+    if caption:
+        escaped_caption = html.escape(caption)
+        return f'{image_tag}\n<p style="text-align: center;"><em>{escaped_caption}</em></p>'
+    return image_tag
 
 
 async def _detect_repository(
@@ -1300,6 +1315,131 @@ def register_tools(app: Server) -> None:
                 elif result.was_updated:
                     formatted_text += f"| **동작** | 기존 페이지에 프로젝트 섹션 추가 (업데이트) |\n"
 
+                if container.generate_diagram_use_case is not None:
+                    formatted_text += (
+                        f"\n\n💡 이 페이지에 다이어그램을 추가하려면 "
+                        f"`attach_diagram_to_wiki` 도구를 사용하세요.\n"
+                        f"page_id: {result.page_id}"
+                    )
+
+                return [TextContent(type="text", text=formatted_text)]
+
+            if name == "generate_diagram":
+                if container.generate_diagram_use_case is None:
+                    return [TextContent(
+                        type="text",
+                        text="# ❌ 다이어그램 기능 비활성화\n\n"
+                             "KROKI_ENABLED=true 환경변수를 설정하고 "
+                             "Docker 컨테이너를 생성해주세요:\n\n"
+                             "```bash\n"
+                             "docker create --name kroki -p 8000:8000 yuzutech/kroki\n"
+                             "```",
+                    )]
+
+                diagram_type = arguments.get("diagram_type", "").strip()
+                code = arguments.get("code", "")
+                output_format = arguments.get("output_format", "svg").strip()
+
+                if not diagram_type or not code:
+                    return [TextContent(type="text", text="❌ diagram_type과 code는 필수입니다.")]
+
+                result = await container.generate_diagram_use_case.execute(
+                    diagram_type=diagram_type,
+                    code=code,
+                    output_format=output_format,
+                )
+                logger.info("✅ Tool 실행 완료: 다이어그램 렌더링 (%s, %d bytes)", diagram_type, len(result.svg_data))
+
+                svg_text = result.svg_data.decode("utf-8") if output_format == "svg" else "(바이너리 PNG 데이터)"
+                formatted_text = "# ✅ 다이어그램 렌더링 완료\n\n"
+                formatted_text += "| 항목 | 내용 |\n"
+                formatted_text += "|------|------|\n"
+                formatted_text += f"| **타입** | {result.diagram_type} |\n"
+                formatted_text += f"| **형식** | {output_format} |\n"
+                formatted_text += f"| **크기** | {len(result.svg_data):,} bytes |\n\n"
+                formatted_text += "이 다이어그램을 Wiki 페이지에 첨부하려면 `attach_diagram_to_wiki` 도구를 사용하세요."
+
+                return [TextContent(type="text", text=formatted_text)]
+
+            if name == "attach_diagram_to_wiki":
+                if container.generate_diagram_use_case is None:
+                    return [TextContent(
+                        type="text",
+                        text="# ❌ 다이어그램 기능 비활성화\n\n"
+                             "KROKI_ENABLED=true 환경변수를 설정하고 "
+                             "Docker 컨테이너를 생성해주세요:\n\n"
+                             "```bash\n"
+                             "docker create --name kroki -p 8000:8000 yuzutech/kroki\n"
+                             "```",
+                    )]
+
+                wiki_check = _check_wiki_base_url(container.settings)
+                if wiki_check:
+                    return wiki_check
+
+                page_id = arguments.get("page_id", "").strip()
+                diagram_type = arguments.get("diagram_type", "").strip()
+                code = arguments.get("code", "")
+                filename = arguments.get("filename", "diagram.svg").strip()
+                caption = arguments.get("caption", "").strip()
+                insert_position = arguments.get("insert_position", "append").strip()
+
+                missing = []
+                if not page_id:
+                    missing.append("page_id")
+                if not diagram_type:
+                    missing.append("diagram_type")
+                if not code:
+                    missing.append("code")
+                if missing:
+                    return [TextContent(type="text", text=f"❌ 필수 파라미터 누락: {', '.join(missing)}")]
+
+                # 1. 다이어그램 렌더링
+                diagram = await container.generate_diagram_use_case.execute(
+                    diagram_type=diagram_type,
+                    code=code,
+                    output_format="svg",
+                )
+
+                # 2. 첨부파일 업로드
+                await container.wiki_adapter.upload_attachment(
+                    page_id=page_id,
+                    filename=filename,
+                    data=diagram.svg_data,
+                    content_type=diagram.content_type,
+                    comment=f"Auto-generated {diagram_type} diagram",
+                )
+
+                # 3. 페이지 본문에 이미지 참조 삽입
+                image_html = _build_diagram_image_html(filename, caption)
+                page = await container.wiki_adapter.get_page_with_content(page_id)
+
+                if insert_position == "prepend":
+                    new_body = image_html + "\n" + page.body
+                else:
+                    new_body = page.body + "\n" + image_html
+
+                await container.wiki_adapter.update_page(
+                    page_id=page_id,
+                    title=page.title,
+                    body=new_body,
+                    version=page.version + 1,
+                    space_key=page.space_key,
+                )
+
+                logger.info(
+                    "✅ Tool 실행 완료: 다이어그램 Wiki 첨부 (page_id=%s, file=%s)", page_id, filename,
+                )
+
+                formatted_text = "# ✅ 다이어그램 Wiki 첨부 완료\n\n"
+                formatted_text += "| 항목 | 내용 |\n"
+                formatted_text += "|------|------|\n"
+                formatted_text += f"| **페이지** | {page.title} (id: {page_id}) |\n"
+                formatted_text += f"| **첨부파일** | {filename} |\n"
+                formatted_text += f"| **다이어그램 타입** | {diagram_type} |\n"
+                formatted_text += f"| **삽입 위치** | {insert_position} |\n"
+                formatted_text += f"| **페이지 URL** | {page.url} |\n"
+
                 return [TextContent(type="text", text=formatted_text)]
 
             if name == "create_jira_filter":
@@ -1788,6 +1928,69 @@ body에는 수정된 전체 페이지 본문 (Confluence Storage Format HTML)을
                         },
                     },
                     "required": ["session_id", "approval_token"],
+                },
+            ),
+            Tool(
+                name="generate_diagram",
+                description="Mermaid, PlantUML 등의 다이어그램 코드를 SVG 이미지로 렌더링합니다. "
+                            "렌더링된 SVG는 Wiki 페이지 첨부 또는 독립적으로 사용 가능합니다.\n\n"
+                            "지원 타입: mermaid, plantuml, c4plantuml, graphviz, ditaa, erd, nomnoml, svgbob, "
+                            "vega, vegalite, wavedrom, bpmn, bytefield, excalidraw, pikchr",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "diagram_type": {
+                            "type": "string",
+                            "description": "다이어그램 타입 (예: 'mermaid', 'plantuml', 'c4plantuml', 'graphviz')",
+                        },
+                        "code": {
+                            "type": "string",
+                            "description": "다이어그램 소스 코드",
+                        },
+                        "output_format": {
+                            "type": "string",
+                            "description": "출력 형식: 'svg' (기본) 또는 'png'",
+                            "default": "svg",
+                        },
+                    },
+                    "required": ["diagram_type", "code"],
+                },
+            ),
+            Tool(
+                name="attach_diagram_to_wiki",
+                description="다이어그램을 렌더링하여 기존 Wiki 페이지에 첨부파일로 업로드하고, "
+                            "페이지 본문에 이미지를 삽입합니다.\n\n"
+                            "⚠️ 즉시 실행됩니다 (승인 프로세스 없음 - 첨부파일 업로드는 비파괴적).",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "page_id": {
+                            "type": "string",
+                            "description": "다이어그램을 첨부할 Confluence 페이지 ID",
+                        },
+                        "diagram_type": {
+                            "type": "string",
+                            "description": "다이어그램 타입 (예: 'mermaid', 'plantuml')",
+                        },
+                        "code": {
+                            "type": "string",
+                            "description": "다이어그램 소스 코드",
+                        },
+                        "filename": {
+                            "type": "string",
+                            "description": "첨부파일명 (기본: 'diagram.svg'). 예: 'architecture.svg', 'flow-chart.svg'",
+                        },
+                        "caption": {
+                            "type": "string",
+                            "description": "이미지 아래 표시할 캡션 (선택)",
+                        },
+                        "insert_position": {
+                            "type": "string",
+                            "description": "본문 삽입 위치: 'append' (끝에 추가, 기본), 'prepend' (맨 앞에 추가)",
+                            "default": "append",
+                        },
+                    },
+                    "required": ["page_id", "diagram_type", "code"],
                 },
             ),
         ]

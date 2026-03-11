@@ -4,6 +4,7 @@ from functools import lru_cache
 from src.adapters.outbound.git_local_adapter import GitLocalAdapter
 from src.adapters.outbound.in_memory_session_store import InMemorySessionStore
 from src.adapters.outbound.jira_adapter import JiraAdapter
+from src.adapters.outbound.kroki_adapter import KrokiAdapter
 from src.adapters.outbound.wiki_adapter import WikiAdapter
 from src.adapters.outbound.yaml_template_repository import YamlTemplateRepository
 from src.application.services.template_renderer import TemplateRenderer
@@ -11,6 +12,7 @@ from src.application.use_cases.create_jira_filter import CreateJiraFilterUseCase
 from src.application.use_cases.create_wiki_issue_page import CreateWikiIssuePageUseCase
 from src.application.use_cases.create_wiki_page_with_content import CreateWikiPageWithContentUseCase
 from src.application.use_cases.complete_jira_issue import CompleteJiraIssueUseCase
+from src.application.use_cases.generate_diagram import GenerateDiagramUseCase
 from src.application.use_cases.get_jira_issue_by_key import GetJiraIssueByKeyUseCase
 from src.application.use_cases.get_jira_issues import GetJiraIssuesUseCase
 from src.application.use_cases.get_project_meta import GetProjectMetaUseCase
@@ -36,6 +38,8 @@ class Container:
     template_renderer: TemplateRenderer
     diff_collector: GitLocalAdapter
     wiki_adapter: WikiAdapter
+    kroki_adapter: KrokiAdapter | None
+    generate_diagram_use_case: GenerateDiagramUseCase | None
 
 
 @lru_cache(maxsize=1)
@@ -117,6 +121,14 @@ def build_container() -> Container:
         project_configs=settings.jira_project_configs,
     )
 
+    # Kroki 다이어그램 (옵셔널)
+    if settings.kroki_enabled:
+        kroki_adapter = KrokiAdapter(base_url=settings.kroki_url)
+        generate_diagram_use_case = GenerateDiagramUseCase(diagram_port=kroki_adapter)
+    else:
+        kroki_adapter = None
+        generate_diagram_use_case = None
+
     # 템플릿 핫 리로드
     reload_templates_use_case = ReloadTemplatesUseCase(
         template_repo=template_repo,
@@ -137,6 +149,8 @@ def build_container() -> Container:
         template_renderer=template_renderer,
         diff_collector=diff_collector,
         wiki_adapter=wiki_adapter,
+        kroki_adapter=kroki_adapter,
+        generate_diagram_use_case=generate_diagram_use_case,
     )
 
 

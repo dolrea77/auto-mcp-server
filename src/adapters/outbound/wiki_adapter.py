@@ -244,6 +244,50 @@ class WikiAdapter:
         logger.info("페이지 업데이트 완료: id=%s, version=%d", page.id, version)
         return page
 
+    async def upload_attachment(
+        self,
+        page_id: str,
+        filename: str,
+        data: bytes,
+        content_type: str,
+        comment: str = "",
+    ) -> str:
+        """페이지에 첨부파일을 업로드한다.
+
+        Confluence REST API: POST /rest/api/content/{id}/child/attachment
+        동일 파일명이 존재하면 새 버전으로 업데이트된다.
+
+        Returns:
+            업로드된 첨부파일명
+        """
+        url = f"{self.base_url}/rest/api/content/{page_id}/child/attachment"
+
+        logger.info(
+            "Confluence 첨부파일 업로드: page_id=%s, filename=%s, size=%d",
+            page_id, filename, len(data),
+        )
+
+        try:
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url,
+                    auth=(self.user, self.password),
+                    headers={"X-Atlassian-Token": "nocheck"},
+                    files={"file": (filename, data, content_type)},
+                    data={"comment": comment} if comment else {},
+                    timeout=30.0,
+                )
+                response.raise_for_status()
+
+            logger.info("✅ 첨부파일 업로드 완료: %s", filename)
+            return filename
+
+        except httpx.HTTPStatusError as e:
+            logger.error("❌ 첨부파일 업로드 실패: %d", e.response.status_code)
+            self._raise_http_error(e)
+        except httpx.NetworkError as e:
+            raise RuntimeError(f"Confluence 서버 연결 실패: {self.base_url}") from e
+
     async def _request(
         self,
         method: str,

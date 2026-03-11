@@ -1,4 +1,5 @@
 import logging
+import subprocess
 import sys
 import traceback
 from logging.handlers import RotatingFileHandler
@@ -51,6 +52,30 @@ def setup_logging():
 logger = setup_logging()
 
 
+def _start_kroki(container_name: str) -> bool:
+    """Kroki Docker 컨테이너를 시작한다. 성공 여부를 반환."""
+    try:
+        result = subprocess.run(
+            ["docker", "start", container_name],
+            capture_output=True, text=True, timeout=15,
+        )
+        return result.returncode == 0
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        logger.warning("Kroki 컨테이너 시작 중 오류: %s", e)
+        return False
+
+
+def _stop_kroki(container_name: str) -> None:
+    """Kroki Docker 컨테이너를 정지한다."""
+    try:
+        subprocess.run(
+            ["docker", "stop", container_name],
+            capture_output=True, text=True, timeout=15,
+        )
+    except (subprocess.TimeoutExpired, FileNotFoundError) as e:
+        logger.warning("Kroki 컨테이너 정지 중 오류: %s", e)
+
+
 async def main() -> None:
     try:
         logger.info("=" * 60)
@@ -64,6 +89,18 @@ async def main() -> None:
         logger.info("Jira User: %s", container.settings.user_id)
         logger.info("Template YAML: %s", container.settings.template_yaml_path)
 
+        # Kroki Docker 컨테이너 시작 (활성화된 경우만)
+        kroki_started = False
+        if container.settings.kroki_enabled:
+            kroki_started = _start_kroki(container.settings.kroki_container_name)
+            if kroki_started:
+                logger.info("✅ Kroki 컨테이너 시작: %s", container.settings.kroki_container_name)
+            else:
+                logger.warning(
+                    "⚠️ Kroki 컨테이너 시작 실패: %s - 다이어그램 기능이 제한될 수 있습니다",
+                    container.settings.kroki_container_name,
+                )
+
         app = Server(container.settings.server_name)
         register_tools(app)
         logger.info("✅ MCP Tools 등록 완료")
@@ -75,6 +112,9 @@ async def main() -> None:
             async with stdio_server() as (read_stream, write_stream):
                 await app.run(read_stream, write_stream, app.create_initialization_options())
         finally:
+            if kroki_started:
+                _stop_kroki(container.settings.kroki_container_name)
+                logger.info("Kroki 컨테이너 정지: %s", container.settings.kroki_container_name)
             if container.settings.app_env == "local":
                 clear_container()
             logger.info("MCP 서버 종료")

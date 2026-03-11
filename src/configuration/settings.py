@@ -112,6 +112,9 @@ class Settings:
     wiki_author_name: str  # Wiki 페이지 제목에 사용할 작성자 이름
     max_diff_chars: int  # include_diff=true 시 diff 최대 문자수
     jira_project_configs: list[JiraProjectConfig]  # 프로젝트별 Jira 설정
+    kroki_enabled: bool  # 다이어그램 기능 사용 여부
+    kroki_url: str  # Kroki 서버 URL
+    kroki_container_name: str  # Docker 컨테이너 이름
 
 
 def build_settings() -> Settings:
@@ -157,4 +160,7 @@ def build_settings() -> Settings:
         wiki_author_name=os.getenv("WIKI_AUTHOR_NAME", ""),
         max_diff_chars=int(os.getenv("MAX_DIFF_CHARS", "30000")),
         jira_project_configs=jira_project_configs,
+        kroki_enabled=os.getenv("KROKI_ENABLED", "false").lower() in ("true", "1", "yes"),
+        kroki_url=os.getenv("KROKI_URL", "http://localhost:8000"),
+        kroki_container_name=os.getenv("KROKI_CONTAINER_NAME", "kroki"),
     )

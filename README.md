@@ -8,6 +8,7 @@ Claude Desktop / Claude Code 등 에이전트에서 사용할 수 있는 로컬 
 - Wiki 페이지 조회/수정 (페이지 ID 또는 제목으로 조회, 내용 추가/삭제/수정)
 - Git 브랜치 커밋 수집 및 변경사항 분석 (베이스 브랜치 자동 탐지, 스마트 Diff 필터링)
 - 프로젝트별 Jira 설정 외부화 (`JIRA_PROJECT_CONFIGS` 환경변수로 종료일 필드, Wiki 날짜 기준, 커스텀 필드, 상태 목록을 선언적으로 구성)
+- 다이어그램 생성 및 Wiki 첨부 (Mermaid, PlantUML, C4 등 15종 — Kroki + Docker 기반, 선택 기능)
 
 ---
 
@@ -22,6 +23,7 @@ Claude Desktop / Claude Code 등 에이전트에서 사용할 수 있는 로컬 
    - [Jira 기능](#1-jira-기능)
    - [Wiki 생성/조회/수정 기능](#2-wiki-생성조회수정-기능)
    - [Git 커밋 수집 및 분석](#3-git-커밋-수집-및-분석)
+   - [다이어그램 기능](#4-다이어그램-기능-선택)
 3. [사용 예시](#-사용-예시)
 4. [문제 해결](#-문제-해결)
 5. [추가 정보](#-추가-정보)
@@ -35,6 +37,7 @@ Claude Desktop / Claude Code 등 에이전트에서 사용할 수 있는 로컬 
 - **macOS**
 - **Python 3.11 이상**
 - **Git CLI** (macOS 기본 설치, 확인: `git --version`)
+- **Docker Desktop** (선택 — 다이어그램 기능 사용 시 필요, 확인: `docker --version`)
 
 ### 1. 환경 변수 설정
 
@@ -80,6 +83,9 @@ vi .env.local  # 또는 원하는 에디터 사용
 | `WIKI_AUTHOR_NAME` | Wiki 페이지 제목에 표시할 작성자 이름 (예: `[홍길동] 2026`) | `""` |
 | `GIT_REPOSITORIES` | Git 저장소 매핑 (JSON). 브랜치 자동 탐지에 사용 | `{}` |
 | `MAX_DIFF_CHARS` | `include_diff=true` 시 최대 Diff 크기 | `30000` |
+| `KROKI_ENABLED` | 다이어그램 기능 사용 여부 (`true`/`false`) | `false` |
+| `KROKI_URL` | Kroki 서버 URL | `http://localhost:8000` |
+| `KROKI_CONTAINER_NAME` | Kroki Docker 컨테이너 이름 | `kroki` |
 
 **`GIT_REPOSITORIES` 예시:**
 
@@ -373,18 +379,20 @@ CLAUDE-*.md
 | | `reload_wiki_templates` | Wiki 템플릿 핫 리로드 |
 | **Git** | `collect_branch_commits` | 브랜치 커밋 수집 (Wiki 생성용) |
 | | `analyze_branch_changes` | 브랜치 변경사항 분석 (범용) |
+| **다이어그램** | `generate_diagram` | 다이어그램 코드를 SVG/PNG로 렌더링 (선택 기능) |
+| | `attach_diagram_to_wiki` | 다이어그램을 렌더링하여 Wiki 페이지에 첨부 (선택 기능) |
 
 #### Context 사용량
 
-MCP 서버 연결 시 16개 Tool 정의(description + inputSchema)가 에이전트의 context에 로드됩니다.
+MCP 서버 연결 시 18개 Tool 정의(description + inputSchema)가 에이전트의 context에 로드됩니다.
 
 | 항목 | 토큰 수 |
 |---|---|
-| Tool description | ~1,500 |
-| inputSchema (파라미터 정의) | ~5,000 |
-| **합계** | **~6,500** |
+| Tool description | ~1,700 |
+| inputSchema (파라미터 정의) | ~5,500 |
+| **합계** | **~7,200** |
 
-200k context 기준 약 **3.2%** 소모. 도구를 호출하지 않아도 연결만으로 이 만큼 사용됩니다.
+200k context 기준 약 **3.6%** 소모. 도구를 호출하지 않아도 연결만으로 이 만큼 사용됩니다.
 
 ---
 
@@ -823,6 +831,120 @@ Claude에게: "이번 변경사항 요약해줘"
 
 ---
 
+### 4. 다이어그램 기능 (선택)
+
+Mermaid, PlantUML 등 다이어그램 코드를 SVG/PNG 이미지로 렌더링하고, Wiki 페이지에 첨부할 수 있습니다.
+
+> **선택 기능:** `KROKI_ENABLED=true` 설정 시에만 활성화됩니다. 비활성화 상태에서도 나머지 기능은 정상 동작합니다.
+
+#### 사전 설정 (최초 1회)
+
+**1) Docker Desktop 설치 확인**
+
+```bash
+docker --version
+```
+
+**2) Kroki 컨테이너 생성 (한 번만)**
+
+```bash
+docker create --name kroki -p 8000:8000 yuzutech/kroki
+```
+
+> 이 명령은 Python 가상환경과 무관합니다. 아무 터미널에서 실행하면 됩니다.
+> Docker 컨테이너를 "등록"만 하고, 실제 실행은 MCP 서버가 관리합니다.
+
+**3) 환경 변수 설정**
+
+`.env.local`에 추가:
+```env
+KROKI_ENABLED=true
+```
+
+#### 동작 원리
+
+```
+MCP 서버 시작 (python -m src)
+  └─ KROKI_ENABLED=true 확인
+       └─ docker start kroki (자동)
+            └─ Kroki 서버 활성화 (localhost:8000)
+
+MCP 서버 종료
+  └─ docker stop kroki (자동)
+       └─ Docker 리소스 해제
+```
+
+- MCP 서버가 시작될 때 Docker 컨테이너를 자동으로 켜고, 종료 시 자동으로 끕니다
+- `KROKI_ENABLED=false`이면 Docker를 건드리지 않습니다
+
+#### 지원 다이어그램 타입 (15종)
+
+| 타입 | 설명 | 예시 용도 |
+|------|------|-----------|
+| `mermaid` | 범용 다이어그램 (가장 인기) | 시퀀스, 플로우차트, 클래스, ER |
+| `plantuml` | UML 다이어그램 | 시퀀스, 클래스, 유스케이스 |
+| `c4plantuml` | C4 아키텍처 모델 | 시스템 컨텍스트, 컨테이너, 컴포넌트 |
+| `graphviz` | 그래프/네트워크 | 의존성 그래프, 상태 다이어그램 |
+| `erd` | ER 다이어그램 | DB 스키마 시각화 |
+| `ditaa` | ASCII 아트 → 다이어그램 | 간단한 아키텍처 그림 |
+| `nomnoml` | UML 스케치 스타일 | 클래스, 패키지 |
+| `svgbob` | ASCII 아트 → SVG | 텍스트 기반 그림 |
+| `vega` / `vegalite` | 데이터 시각화 | 차트, 그래프 |
+| `wavedrom` | 디지털 타이밍 다이어그램 | 하드웨어 신호 |
+| `bpmn` | 비즈니스 프로세스 모델링 | 업무 플로우 |
+| `bytefield` | 바이트/비트 필드 | 프로토콜 패킷 구조 |
+| `excalidraw` | 스케치 스타일 다이어그램 | 자유로운 화이트보드 |
+| `pikchr` | PIC 기반 다이어그램 | 기술 문서 삽화 |
+
+---
+
+#### 4.1 다이어그램 렌더링 (`generate_diagram`)
+
+다이어그램 코드를 SVG 또는 PNG로 렌더링합니다. Wiki 첨부 없이 미리보기 용도로 사용합니다.
+
+```
+Claude에게: "Mermaid로 로그인 흐름 시퀀스 다이어그램 그려줘"
+```
+
+**필수 파라미터:**
+- `diagram_type`: 다이어그램 타입 (예: `mermaid`, `plantuml`, `c4plantuml`)
+- `code`: 다이어그램 소스 코드
+
+**선택 파라미터:**
+- `output_format`: 출력 형식 — `svg` (기본) 또는 `png`
+
+**응답:**
+- 다이어그램 타입, 형식, 크기 정보
+- `attach_diagram_to_wiki` 도구 사용 안내
+
+---
+
+#### 4.2 다이어그램 Wiki 첨부 (`attach_diagram_to_wiki`)
+
+다이어그램을 렌더링하여 기존 Wiki 페이지에 첨부파일로 업로드하고, 페이지 본문에 이미지를 삽입합니다.
+
+> **승인 프로세스 없이 즉시 실행됩니다.** 첨부파일 업로드는 비파괴적 작업이므로 별도 승인이 필요하지 않습니다.
+
+```
+Claude에게: "이 다이어그램을 페이지 ID 339090255에 첨부해줘"
+```
+
+**필수 파라미터:**
+- `page_id`: 다이어그램을 첨부할 Confluence 페이지 ID
+- `diagram_type`: 다이어그램 타입 (예: `mermaid`, `plantuml`)
+- `code`: 다이어그램 소스 코드
+
+**선택 파라미터:**
+- `filename`: 첨부파일명 (기본: `diagram.svg`). 예: `architecture.svg`, `login-flow.svg`
+- `caption`: 이미지 아래 표시할 캡션
+- `insert_position`: 본문 삽입 위치 — `append` (끝에 추가, 기본) 또는 `prepend` (맨 앞에 추가)
+
+**응답:**
+- 업로드된 첨부파일명, 삽입 위치
+- 업데이트된 페이지 정보 (제목, ID, URL)
+
+---
+
 ## 💡 사용 예시
 
 ### 예시 1: Jira 이슈 완료 후 Wiki 페이지 생성
@@ -1010,6 +1132,57 @@ Claude: "8개 커밋 수집 완료. ..."
 
 ---
 
+### 예시 10: 다이어그램 렌더링 (미리보기)
+
+```
+사용자: "Mermaid로 로그인 흐름 시퀀스 다이어그램 그려줘"
+→ generate_diagram 실행
+
+Claude: "✅ 다이어그램 렌더링 완료 (mermaid, svg, 2,340 bytes)
+Wiki 페이지에 첨부하려면 attach_diagram_to_wiki 도구를 사용하세요."
+```
+
+---
+
+### 예시 11: Wiki 생성 후 다이어그램 첨부
+
+```
+# 1단계: Wiki 페이지 생성
+사용자: "MYPROJECT-1234 Wiki 이슈 정리 페이지 만들어줘"
+→ create_wiki_issue_page 실행 (프리뷰)
+
+사용자: "승인"
+→ approve_wiki_generation 실행 (페이지 생성 완료, page_id 반환)
+
+# 2단계: 다이어그램 첨부
+사용자: "이 페이지에 시스템 아키텍처 다이어그램도 추가해줘"
+→ attach_diagram_to_wiki 실행
+
+Claude: "✅ 다이어그램 첨부 완료
+- 파일: architecture.svg
+- 위치: 페이지 하단
+- 페이지: https://confluence.../..."
+```
+
+---
+
+### 예시 12: PlantUML 클래스 다이어그램 Wiki 첨부
+
+```
+사용자: "PlantUML로 우리 시스템의 클래스 다이어그램 만들어서 페이지 ID 339090255에 첨부해줘"
+→ attach_diagram_to_wiki(
+    page_id="339090255",
+    diagram_type="plantuml",
+    code="@startuml\nclass User {...}\n@enduml",
+    filename="class-diagram.svg",
+    caption="시스템 클래스 다이어그램"
+  )
+
+Claude: "✅ 다이어그램 첨부 완료"
+```
+
+---
+
 ## 🛠 문제 해결
 
 ### 1. Jira 인증 실패
@@ -1057,7 +1230,22 @@ Claude: "8개 커밋 수집 완료. ..."
 
 ---
 
-### 4. MCP 서버가 Claude에서 보이지 않음
+### 4. Docker 관련 오류 (다이어그램 기능)
+
+**증상:** MCP 서버 시작 시 Docker 관련 경고 로그
+```
+Kroki Docker 시작 실패: ...
+```
+
+**해결 방법:**
+1. Docker Desktop이 실행 중인지 확인
+2. 컨테이너가 생성되어 있는지 확인: `docker ps -a | grep kroki`
+3. 미생성 시: `docker create --name kroki -p 8000:8000 yuzutech/kroki`
+4. Docker가 설치되지 않은 경우: `KROKI_ENABLED=false`로 설정하면 다이어그램 기능만 비활성화됩니다
+
+---
+
+### 5. MCP 서버가 Claude에서 보이지 않음
 
 **Claude Desktop:**
 1. `claude_desktop_config.json` 파일 경로 확인: `~/Library/Application Support/Claude/claude_desktop_config.json`
@@ -1084,7 +1272,44 @@ claude mcp add auto-mcp-server \
 
 ---
 
-### 5. 로그 확인
+### 6. 다이어그램 기능 오류 (Kroki/Docker)
+
+**증상:**
+```
+❌ 다이어그램 기능 비활성화
+KROKI_ENABLED=true 환경변수를 설정하고 Docker 컨테이너를 생성해주세요
+```
+
+**해결 방법:**
+1. `.env.local`에 `KROKI_ENABLED=true` 추가
+2. Docker 컨테이너 생성: `docker create --name kroki -p 8000:8000 yuzutech/kroki`
+3. MCP 서버 재시작
+
+**증상:**
+```
+Kroki 서버 연결 실패: http://localhost:8000
+Docker 컨테이너가 실행 중인지 확인하세요.
+```
+
+**해결 방법:**
+1. Docker Desktop이 실행 중인지 확인
+2. 수동으로 컨테이너 상태 확인: `docker ps -a | grep kroki`
+3. 수동 시작 테스트: `docker start kroki`
+4. 포트 충돌 확인: `lsof -i :8000` (다른 서비스가 8000 포트를 사용 중일 수 있음)
+5. 포트 변경 시 `.env.local`의 `KROKI_URL`도 맞춰서 수정
+
+**증상:**
+```
+Kroki 렌더링 실패 (HTTP 400): ...
+```
+
+**해결 방법:**
+- 다이어그램 소스 코드 문법 오류 확인
+- 지원되는 다이어그램 타입인지 확인 (15종)
+
+---
+
+### 7. 로그 확인
 
 서버 실행 중 문제가 발생하면 로그를 확인하세요.
 
