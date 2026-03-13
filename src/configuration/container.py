@@ -71,6 +71,7 @@ def build_container() -> Container:
     get_jira_issues_use_case = GetJiraIssuesUseCase(
         jira_port=jira_adapter,
         jira_user=settings.user_id,
+        project_configs=settings.jira_project_configs,
     )
 
     get_jira_issue_by_key_use_case = GetJiraIssueByKeyUseCase(
