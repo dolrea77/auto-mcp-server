@@ -255,7 +255,7 @@ class WikiAdapter:
         """페이지에 첨부파일을 업로드한다.
 
         Confluence REST API: POST /rest/api/content/{id}/child/attachment
-        동일 파일명이 존재하면 새 버전으로 업데이트된다.
+        동일 파일명이 존재하면 기존 첨부파일을 찾아 새 버전으로 업데이트한다.
 
         Returns:
             업로드된 첨부파일명
@@ -283,10 +283,54 @@ class WikiAdapter:
             return filename
 
         except httpx.HTTPStatusError as e:
+            if e.response.status_code == 400 and "same file name" in e.response.text:
+                return await self._update_existing_attachment(
+                    page_id, filename, data, content_type, comment,
+                )
             logger.error("❌ 첨부파일 업로드 실패: %d", e.response.status_code)
             self._raise_http_error(e)
         except httpx.NetworkError as e:
             raise RuntimeError(f"Confluence 서버 연결 실패: {self.base_url}") from e
+
+    async def _update_existing_attachment(
+        self,
+        page_id: str,
+        filename: str,
+        data: bytes,
+        content_type: str,
+        comment: str,
+    ) -> str:
+        """기존 첨부파일을 새 버전으로 업데이트한다."""
+        base = f"{self.base_url}/rest/api/content/{page_id}/child/attachment"
+
+        async with httpx.AsyncClient() as client:
+            # 기존 첨부파일 ID 조회
+            resp = await client.get(
+                base,
+                params={"filename": filename},
+                auth=(self.user, self.password),
+                timeout=15.0,
+            )
+            resp.raise_for_status()
+            results = resp.json().get("results", [])
+            if not results:
+                raise RuntimeError(f"첨부파일 '{filename}'을 찾을 수 없습니다")
+
+            att_id = results[0]["id"]
+            update_url = f"{base}/{att_id}/data"
+
+            response = await client.post(
+                update_url,
+                auth=(self.user, self.password),
+                headers={"X-Atlassian-Token": "nocheck"},
+                files={"file": (filename, data, content_type)},
+                data={"comment": comment} if comment else {},
+                timeout=30.0,
+            )
+            response.raise_for_status()
+
+        logger.info("✅ 기존 첨부파일 업데이트 완료: %s (id=%s)", filename, att_id)
+        return filename
 
     async def _request(
         self,

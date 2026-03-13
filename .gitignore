@@ -22,6 +22,8 @@ env/
 
 # Claude Code 로컬 설정
 .claude/
+CLAUDE.md
+CLAUDE-*.md
 
 # IDE
 .idea/
@@ -36,3 +38,4 @@ logs/
 .DS_Store
 Thumbs.db
 kroki_plan.md
+docs

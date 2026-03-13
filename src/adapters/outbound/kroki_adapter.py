@@ -1,4 +1,5 @@
 import logging
+import re
 
 import httpx
 
@@ -59,15 +60,40 @@ class KrokiAdapter:
                 f"{e.response.text[:300]}"
             ) from e
 
+        svg_data = response.content
+        if output_format == "svg":
+            svg_data = self._ensure_svg_dimensions(svg_data)
+
         filename = f"diagram.{output_format}"
-        logger.info("✅ Kroki 렌더링 완료: %d bytes", len(response.content))
+        logger.info("✅ Kroki 렌더링 완료: %d bytes", len(svg_data))
 
         return DiagramResult(
-            svg_data=response.content,
+            svg_data=svg_data,
             diagram_type=diagram_type,
             filename=filename,
             content_type=content_type,
         )
+
+    @staticmethod
+    def _ensure_svg_dimensions(svg_data: bytes) -> bytes:
+        """SVG에 width/height 속성이 없으면 viewBox에서 추출하여 추가한다."""
+        svg_text = svg_data.decode("utf-8")
+
+        if re.search(r"\bwidth\s*=", svg_text[:500]):
+            return svg_data
+
+        match = re.search(
+            r'viewBox\s*=\s*["\'][\d.]+\s+[\d.]+\s+([\d.]+)\s+([\d.]+)["\']',
+            svg_text,
+        )
+        if match:
+            w, h = match.group(1), match.group(2)
+            svg_text = re.sub(
+                r"(<svg\b)", rf'\1 width="{w}" height="{h}"', svg_text, count=1
+            )
+            return svg_text.encode("utf-8")
+
+        return svg_data
 
     async def health_check(self) -> bool:
         """Kroki 서버 헬스 체크."""

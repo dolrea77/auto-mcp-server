@@ -425,6 +425,12 @@ Claude에게: "진행 중인 이슈만 보여줘"
 **파라미터:**
 - `statuses` (선택): 조회할 상태 목록 (생략 시 전체 조회)
 - `project_key` (선택): 특정 프로젝트로 필터링
+- `issuetype` (선택): 이슈 유형 필터 (예: `"버그"`, `"스토리"`)
+- `created_after` (선택): 이 날짜 이후 생성된 이슈 (YYYY-MM-DD)
+- `created_before` (선택): 이 날짜 이전 생성된 이슈 (YYYY-MM-DD)
+- `text` (선택): 제목/설명에서 키워드 검색
+- `assignee` (선택): 담당자 지정 (미지정 시 현재 사용자)
+- `custom_field_filters` (선택): 커스텀 필드 범위 필터 (`{필드명: {after?, before?}}`)
 
 **영어 상태값 자동 변환:**
 
