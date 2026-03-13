@@ -1,4 +1,5 @@
 import logging
+from datetime import date, timedelta
 
 from src.application.ports.jira_port import JiraPort
 from src.domain.jira import JiraProjectConfig
@@ -57,12 +58,15 @@ class GetJiraIssuesUseCase:
         """
         logger.info("GetJiraIssuesUseCase 실행 시작")
 
-        # assignee 조건: 지정 시 해당 사용자, 미지정 시 현재 사용자
-        if assignee:
-            conditions = [f'assignee="{assignee}"']
+        # assignee 조건: "*"이면 담당자 무관 전체 조회, 지정 시 해당 사용자, 미지정 시 현재 사용자
+        conditions: list[str] = []
+        if assignee == "*":
+            logger.info("담당자 필터 없음 (전체 조회)")
+        elif assignee:
+            conditions.append(f'assignee="{assignee}"')
             logger.info("담당자 필터: %s", assignee)
         else:
-            conditions = [f'assignee="{self.jira_user}"']
+            conditions.append(f'assignee="{self.jira_user}"')
 
         if project_key:
             conditions.append(f'project="{project_key}"')
@@ -84,8 +88,9 @@ class GetJiraIssuesUseCase:
             logger.info("생성일 시작 필터: %s", created_after)
 
         if created_before:
-            conditions.append(f'created <= "{created_before}"')
-            logger.info("생성일 종료 필터: %s", created_before)
+            next_day = str(date.fromisoformat(created_before) + timedelta(days=1))
+            conditions.append(f'created < "{next_day}"')
+            logger.info("생성일 종료 필터: created < %s (원본: %s)", next_day, created_before)
 
         if text:
             conditions.append(f'text ~ "{text}"')

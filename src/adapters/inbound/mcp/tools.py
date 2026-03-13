@@ -1542,7 +1542,7 @@ def register_tools(app: Server) -> None:
 - `issuetype`: 이슈 유형으로 필터 (예: '검수(BNF)', '버그(BNF)')
 - `created_after` / `created_before`: 생성일 범위 (YYYY-MM-DD)
 - `text`: 제목/설명 키워드 검색
-- `assignee`: 다른 담당자 이슈 조회 (미지정 시 현재 사용자)
+- `assignee`: 다른 담당자 이슈 조회 (미지정 시 현재 사용자, '*' 시 전체)
 - `custom_field_filters`: 커스텀 필드 날짜 범위 필터""" if (status_mapping_desc or all_statuses_desc) else """Jira에서 현재 사용자에게 할당된 이슈를 조회합니다.
 
 **기본 동작**: 파라미터 없이 호출하면 모든 프로젝트의 모든 상태 이슈를 조회합니다.
@@ -1551,7 +1551,7 @@ def register_tools(app: Server) -> None:
 - `issuetype`: 이슈 유형으로 필터 (예: '검수(BNF)', '버그(BNF)')
 - `created_after` / `created_before`: 생성일 범위 (YYYY-MM-DD)
 - `text`: 제목/설명 키워드 검색
-- `assignee`: 다른 담당자 이슈 조회 (미지정 시 현재 사용자)
+- `assignee`: 다른 담당자 이슈 조회 (미지정 시 현재 사용자, '*' 시 전체)
 - `custom_field_filters`: 커스텀 필드 날짜 범위 필터""",
                 inputSchema={
                     "type": "object",
@@ -1583,7 +1583,7 @@ def register_tools(app: Server) -> None:
                         },
                         "assignee": {
                             "type": "string",
-                            "description": "담당자 ID 지정 (미지정 시 현재 사용자)",
+                            "description": "담당자 ID 지정 (미지정 시 현재 사용자, '*' 입력 시 담당자 무관 전체 조회)",
                         },
                         "custom_field_filters": {
                             "type": "object",
