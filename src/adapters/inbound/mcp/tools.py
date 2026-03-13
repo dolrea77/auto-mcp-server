@@ -408,16 +408,15 @@ _PREVIEW_WARNING = (
 
 
 def _format_approval_instructions(session) -> str:
-    """승인 안내 + approve 호출 예시를 포맷팅합니다."""
+    """승인 안내를 포맷팅합니다. approval_token은 의도적으로 포함하지 않음."""
     text = "\n---\n\n"
     text += "## ❓ 다음 단계\n\n"
     text += "**사용자에게 물어보세요:**\n"
     text += '> "위 내용으로 Wiki 페이지를 생성할까요? (yes/no)"\n\n'
     text += "**사용자가 승인한 경우에만:**\n"
-    text += f"```\napprove_wiki_generation(\n"
-    text += f"  session_id=\"{session.session_id}\",\n"
-    text += f"  approval_token=\"{session.approval_token}\"\n"
-    text += ")\n```\n"
+    text += "1. `get_wiki_generation_status`로 승인 토큰을 조회하세요\n"
+    text += "2. 조회된 토큰으로 `approve_wiki_generation`을 호출하세요\n\n"
+    text += f"**session_id:** `{session.session_id}`\n"
     return text
 
 
@@ -513,10 +512,24 @@ def register_tools(app: Server) -> None:
                 if statuses != normalized_statuses:
                     logger.info("상태값 자동 변환: %s → %s", statuses, normalized_statuses)
 
+                # 새 필터 파라미터 추출
+                issuetype = arguments.get("issuetype", "").strip() or None
+                created_after = arguments.get("created_after", "").strip() or None
+                created_before = arguments.get("created_before", "").strip() or None
+                text = arguments.get("text", "").strip() or None
+                assignee = arguments.get("assignee", "").strip() or None
+                custom_field_filters = arguments.get("custom_field_filters") or None
+
                 # 변환된 상태값으로 실행
                 result = await container.get_jira_issues_use_case.execute(
                     statuses=normalized_statuses,
                     project_key=project_key,
+                    issuetype=issuetype,
+                    created_after=created_after,
+                    created_before=created_before,
+                    text=text,
+                    assignee=assignee,
+                    custom_field_filters=custom_field_filters,
                 )
                 logger.info("✅ Tool 실행 완료: %d개 이슈 조회됨", len(result))
 
@@ -1416,7 +1429,7 @@ def register_tools(app: Server) -> None:
                 formatted_text += "\n---\n\n"
                 formatted_text += _PREVIEW_WARNING
                 formatted_text += f"\n\n**session_id:** `{session.session_id}`\n"
-                formatted_text += f"**approval_token:** `{session.approval_token}`\n"
+                formatted_text += "\n**사용자 승인 후** `get_wiki_generation_status`로 승인 토큰을 조회하세요.\n"
 
                 return [TextContent(type="text", text=formatted_text)]
 
@@ -1523,9 +1536,23 @@ def register_tools(app: Server) -> None:
 
 {f"**영어 상태값 자동 변환** (편리 기능):{chr(10)}{status_mapping_desc}" if status_mapping_desc else "영어 상태값을 사용하면 설정된 한글 상태값으로 자동 변환됩니다."}
 
-{all_statuses_desc}""" if (status_mapping_desc or all_statuses_desc) else """Jira에서 현재 사용자에게 할당된 이슈를 조회합니다.
+{all_statuses_desc}
 
-**기본 동작**: 파라미터 없이 호출하면 모든 프로젝트의 모든 상태 이슈를 조회합니다.""",
+**추가 필터링 옵션:**
+- `issuetype`: 이슈 유형으로 필터 (예: '검수(BNF)', '버그(BNF)')
+- `created_after` / `created_before`: 생성일 범위 (YYYY-MM-DD)
+- `text`: 제목/설명 키워드 검색
+- `assignee`: 다른 담당자 이슈 조회 (미지정 시 현재 사용자)
+- `custom_field_filters`: 커스텀 필드 날짜 범위 필터""" if (status_mapping_desc or all_statuses_desc) else """Jira에서 현재 사용자에게 할당된 이슈를 조회합니다.
+
+**기본 동작**: 파라미터 없이 호출하면 모든 프로젝트의 모든 상태 이슈를 조회합니다.
+
+**추가 필터링 옵션:**
+- `issuetype`: 이슈 유형으로 필터 (예: '검수(BNF)', '버그(BNF)')
+- `created_after` / `created_before`: 생성일 범위 (YYYY-MM-DD)
+- `text`: 제목/설명 키워드 검색
+- `assignee`: 다른 담당자 이슈 조회 (미지정 시 현재 사용자)
+- `custom_field_filters`: 커스텀 필드 날짜 범위 필터""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1537,6 +1564,37 @@ def register_tools(app: Server) -> None:
                         "project_key": {
                             "type": "string",
                             "description": f"특정 프로젝트로 필터링 (예: {project_key_examples}). **이 파라미터를 생략하면 전체 프로젝트 조회**",
+                        },
+                        "issuetype": {
+                            "type": "string",
+                            "description": "이슈 유형 필터 (예: '검수(BNF)', '버그(BNF)', '개선(BNF)', 'sub_개발(BNF)')",
+                        },
+                        "created_after": {
+                            "type": "string",
+                            "description": "이 날짜 이후 생성된 이슈 (YYYY-MM-DD 형식)",
+                        },
+                        "created_before": {
+                            "type": "string",
+                            "description": "이 날짜 이전 생성된 이슈 (YYYY-MM-DD 형식)",
+                        },
+                        "text": {
+                            "type": "string",
+                            "description": "제목/설명에서 키워드 검색",
+                        },
+                        "assignee": {
+                            "type": "string",
+                            "description": "담당자 ID 지정 (미지정 시 현재 사용자)",
+                        },
+                        "custom_field_filters": {
+                            "type": "object",
+                            "description": "커스텀 필드 범위 필터. 키: 필드 표시명(jira_custom_fields에 등록된 이름), 값: {after?: 'YYYY-MM-DD', before?: 'YYYY-MM-DD'}",
+                            "additionalProperties": {
+                                "type": "object",
+                                "properties": {
+                                    "after": {"type": "string", "description": "이 날짜 이후 (YYYY-MM-DD)"},
+                                    "before": {"type": "string", "description": "이 날짜 이전 (YYYY-MM-DD)"},
+                                },
+                            },
                         },
                     },
                 },
@@ -1892,7 +1950,13 @@ body에는 수정된 전체 페이지 본문 (Confluence Storage Format HTML)을
             ),
             Tool(
                 name="approve_wiki_generation",
-                description="""Wiki 생성을 승인하여 실제 Confluence 페이지를 생성/수정합니다. WAIT_APPROVAL 상태일 때만 동작.""",
+                description=(
+                    "Wiki 생성을 승인하여 실제 Confluence 페이지를 생성/수정합니다. "
+                    "WAIT_APPROVAL 상태일 때만 동작.\n\n"
+                    "🛑 반드시 사용자의 명시적 승인을 받은 후에만 호출하세요. "
+                    "사용자 확인 없이 자동으로 호출하면 안 됩니다. "
+                    "승인 토큰은 get_wiki_generation_status에서 조회해야 합니다."
+                ),
                 inputSchema={
                     "type": "object",
                     "properties": {
