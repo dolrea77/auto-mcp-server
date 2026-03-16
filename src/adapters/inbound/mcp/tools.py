@@ -1532,7 +1532,7 @@ def register_tools(app: Server) -> None:
                 name="get_jira_issues",
                 description=f"""Jira에서 현재 사용자에게 할당된 이슈를 조회합니다.
 
-**기본 동작**: 파라미터 없이 호출하면 모든 프로젝트의 모든 상태 이슈를 조회합니다.
+**기본 동작**: 파라미터 없이 호출하면 설정된 프로젝트({project_key_examples}) 내 모든 상태 이슈를 조회합니다.
 
 {f"**영어 상태값 자동 변환** (편리 기능):{chr(10)}{status_mapping_desc}" if status_mapping_desc else "영어 상태값을 사용하면 설정된 한글 상태값으로 자동 변환됩니다."}
 
@@ -1543,9 +1543,9 @@ def register_tools(app: Server) -> None:
 - `created_after` / `created_before`: 생성일 범위 (YYYY-MM-DD)
 - `text`: 제목/설명 키워드 검색
 - `assignee`: 다른 담당자 이슈 조회 (미지정 시 현재 사용자, '*' 시 전체)
-- `custom_field_filters`: 커스텀 필드 날짜 범위 필터""" if (status_mapping_desc or all_statuses_desc) else """Jira에서 현재 사용자에게 할당된 이슈를 조회합니다.
+- `custom_field_filters`: 커스텀 필드 날짜 범위 필터""" if (status_mapping_desc or all_statuses_desc) else f"""Jira에서 현재 사용자에게 할당된 이슈를 조회합니다.
 
-**기본 동작**: 파라미터 없이 호출하면 모든 프로젝트의 모든 상태 이슈를 조회합니다.
+**기본 동작**: 파라미터 없이 호출하면 설정된 프로젝트({project_key_examples}) 내 모든 상태 이슈를 조회합니다.
 
 **추가 필터링 옵션:**
 - `issuetype`: 이슈 유형으로 필터 (예: '검수(BNF)', '버그(BNF)')
@@ -1563,7 +1563,7 @@ def register_tools(app: Server) -> None:
                         },
                         "project_key": {
                             "type": "string",
-                            "description": f"특정 프로젝트로 필터링 (예: {project_key_examples}). **이 파라미터를 생략하면 전체 프로젝트 조회**",
+                            "description": f"특정 프로젝트로 필터링 (예: {project_key_examples}). **이 파라미터를 생략하면 설정된 프로젝트 전체 조회**",
                         },
                         "issuetype": {
                             "type": "string",

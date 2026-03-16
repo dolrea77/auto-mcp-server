@@ -18,9 +18,12 @@ class GetJiraIssuesUseCase:
     ):
         self.jira_port = jira_port
         self.jira_user = jira_user
+        # 설정된 프로젝트 키 목록 (project_key 미지정 시 조회 범위 제한용)
+        self._allowed_project_keys: list[str] = []
         # 모든 프로젝트 config의 커스텀 필드 표시명 합집합
         self._valid_custom_field_names: set[str] = set()
         if project_configs:
+            self._allowed_project_keys = [config.key for config in project_configs]
             for config in project_configs:
                 self._valid_custom_field_names.update(config.jira_custom_fields.keys())
 
@@ -71,6 +74,10 @@ class GetJiraIssuesUseCase:
         if project_key:
             conditions.append(f'project="{project_key}"')
             logger.info("프로젝트 필터: %s", project_key)
+        elif self._allowed_project_keys:
+            keys_filter = ", ".join(f'"{k}"' for k in self._allowed_project_keys)
+            conditions.append(f"project in ({keys_filter})")
+            logger.info("설정된 프로젝트로 제한: %s", self._allowed_project_keys)
 
         if statuses is None:
             logger.info("모든 상태의 이슈 조회 (status 필터 없음)")
