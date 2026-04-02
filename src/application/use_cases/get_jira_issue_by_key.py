@@ -14,14 +14,14 @@ _MAX_EXCEL_SHEETS = 3
 _MAX_EXCEL_ROWS_PER_SHEET = 200
 
 # MIME 타입 분류
-_IMAGE_MIMES = {"image/png", "image/jpeg", "image/gif", "image/webp", "image/svg+xml"}
+_IMAGE_MIMES = {"image/png", "image/jpeg", "image/gif", "image/webp"}
 _EXCEL_MIMES = {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
     "application/vnd.ms-excel",
 }
 _TEXT_MIMES = {
     "text/plain", "text/csv", "text/xml", "text/html",
-    "application/json", "application/xml",
+    "application/json", "application/xml", "image/svg+xml",
 }
 
 
