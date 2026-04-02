@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from mcp.server import Server
-from mcp.types import TextContent
+from mcp.types import ImageContent, TextContent
 
 from src.adapters.outbound.git_local_adapter import GitLocalAdapter
 from src.adapters.outbound.jira_adapter import _build_field_display_names
@@ -223,6 +223,23 @@ def _format_custom_fields(
             display_name = field_display_names.get(field_id, field_id)
             lines.append(f"| **{display_name}** | {value} |")
     return "\n".join(lines)
+
+
+def _format_attachment_meta(attachment: dict) -> str:
+    """첨부파일 하나의 메타정보를 마크다운 텍스트로 포맷팅합니다."""
+    filename = attachment.get("filename", "unknown")
+    size = attachment.get("size", 0)
+    mime = attachment.get("mimeType", "unknown")
+    url = attachment.get("content_url", "")
+
+    if size >= 1024 * 1024:
+        size_str = f"{size / (1024 * 1024):.1f}MB"
+    elif size >= 1024:
+        size_str = f"{size / 1024:.1f}KB"
+    else:
+        size_str = f"{size}B"
+
+    return f"- **{filename}** ({mime}, {size_str}) [다운로드]({url})"
 
 
 # ── 동적 MCP description 예시 생성 ──
@@ -496,12 +513,35 @@ def register_tools(app: Server) -> None:
                     # 전체 설명 표시
                     formatted_text += f"\n### 📝 설명\n\n{desc}\n"
 
-                logger.info("✅ Tool 실행 완료: 이슈 %s 조회됨", key)
+                # 첨부파일 섹션
+                attachments = result.get("attachments", [])
+                content_items: list[TextContent | ImageContent] = []
 
-                return [TextContent(
-                    type="text",
-                    text=formatted_text
-                )]
+                if attachments:
+                    formatted_text += f"\n### 📎 첨부파일 ({len(attachments)}건)\n\n"
+
+                    for att in attachments:
+                        formatted_text += _format_attachment_meta(att) + "\n"
+
+                        if att.get("content_type") == "text" and att.get("content"):
+                            # 텍스트/엑셀 파싱 결과는 접이식 블록으로 표시
+                            formatted_text += f"\n<details><summary>{att['filename']} 내용</summary>\n\n```\n{att['content'][:5000]}\n```\n\n</details>\n\n"
+
+                # 메인 텍스트 content 추가
+                content_items.append(TextContent(type="text", text=formatted_text))
+
+                # 이미지 첨부파일은 ImageContent로 별도 추가
+                for att in attachments:
+                    if att.get("content_type") == "image" and att.get("content"):
+                        content_items.append(ImageContent(
+                            type="image",
+                            data=att["content"],
+                            mimeType=att["mimeType"],
+                        ))
+
+                logger.info("✅ Tool 실행 완료: 이슈 %s 조회됨 (첨부 %d건)", key, len(attachments))
+
+                return content_items
 
             if name == "get_jira_issues":
                 # 영어 상태값을 한글로 자동 변환
@@ -1059,6 +1099,35 @@ def register_tools(app: Server) -> None:
 
                 return [TextContent(type="text", text=formatted_text)]
 
+            if name == "get_wiki_child_pages":
+                page_id = arguments.get("page_id", "").strip()
+                if not page_id:
+                    raise ValueError("page_id는 필수입니다")
+
+                wiki_error = _check_wiki_base_url(container.settings)
+                if wiki_error:
+                    return wiki_error
+
+                adapter = container.wiki_adapter
+                child_pages = await adapter.get_child_pages(page_id)
+
+                logger.info("✅ Tool 실행 완료: 하위 페이지 조회 (parent_id=%s, count=%d)", page_id, len(child_pages))
+
+                if not child_pages:
+                    return [TextContent(
+                        type="text",
+                        text=f"# 하위 페이지 없음\n\n페이지 ID `{page_id}`에 하위 페이지가 없습니다."
+                    )]
+
+                formatted_text = f"# 하위 페이지 목록 (상위 페이지: {page_id})\n\n"
+                formatted_text += f"총 **{len(child_pages)}건**\n\n"
+                formatted_text += "| # | 페이지 ID | 제목 | URL |\n"
+                formatted_text += "|---|-----------|------|-----|\n"
+                for idx, p in enumerate(child_pages, 1):
+                    formatted_text += f"| {idx} | {p.id} | {p.title} | {p.url} |\n"
+
+                return [TextContent(type="text", text=formatted_text)]
+
             if name == "get_wiki_page":
                 page_id = arguments.get("page_id", "").strip()
                 page_title = arguments.get("page_title", "").strip()
@@ -1516,7 +1585,13 @@ def register_tools(app: Server) -> None:
         return [
             Tool(
                 name="get_jira_issue",
-                description="""특정 Jira 이슈를 key(ID)로 조회합니다.""",
+                description="""특정 Jira 이슈를 key(ID)로 조회합니다.
+
+첨부파일이 있으면 메타정보(파일명, 크기, 타입)를 함께 반환합니다.
+- 이미지(PNG/JPG/GIF 등, 5MB 이하): 에이전트가 직접 분석 가능
+- 엑셀(XLSX/XLS, 2MB 이하): 텍스트로 변환하여 분석 가능
+- 텍스트(TXT/CSV/JSON/XML, 500KB 이하): 내용 직접 확인 가능
+- 기타/대용량: 메타정보와 다운로드 URL만 제공""",
                 inputSchema={
                     "type": "object",
                     "properties": {
@@ -1869,6 +1944,23 @@ parent_page_id 또는 parent_page_title 중 하나 필수 (둘 다 지정 시 ID
                         },
                     },
                     "required": ["page_title", "content"],
+                },
+            ),
+            Tool(
+                name="get_wiki_child_pages",
+                description="""Confluence Wiki 페이지의 하위 페이지 목록을 조회합니다.
+
+페이지네이션을 자동 처리하여 전체 하위 페이지를 반환합니다.
+하위 페이지의 ID, 제목, URL 정보를 확인할 수 있습니다.""",
+                inputSchema={
+                    "type": "object",
+                    "properties": {
+                        "page_id": {
+                            "type": "string",
+                            "description": "상위 페이지 ID (예: '24273358')",
+                        },
+                    },
+                    "required": ["page_id"],
                 },
             ),
             Tool(
