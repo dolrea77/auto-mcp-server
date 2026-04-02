@@ -175,6 +175,46 @@ class JiraAdapter:
             issuetype_statuses=issuetype_statuses,
         )
 
+    async def get_issue_attachments(self, issue_key: str) -> list[dict]:
+        """이슈의 첨부파일 메타정보를 조회합니다."""
+        url = f"{self.base_url}/rest/api/2/issue/{issue_key}"
+        params = {"fields": "attachment"}
+
+        logger.info("🌐 Jira 첨부파일 조회: %s", issue_key)
+
+        data = await self._request(
+            "GET",
+            url,
+            params=params,
+            context_msg="첨부파일 조회",
+        )
+
+        attachments_raw = data.get("fields", {}).get("attachment", [])
+        attachments = []
+        for att in attachments_raw:
+            attachments.append({
+                "id": str(att.get("id", "")),
+                "filename": att.get("filename", ""),
+                "size": att.get("size", 0),
+                "mimeType": att.get("mimeType", ""),
+                "content_url": att.get("content", ""),
+            })
+
+        logger.info("✅ 첨부파일 %d건 조회됨", len(attachments))
+        return attachments
+
+    async def download_attachment_content(self, content_url: str) -> bytes:
+        """첨부파일 바이너리 데이터를 다운로드합니다."""
+        logger.info("🌐 첨부파일 다운로드: %s", content_url[:80])
+        try:
+            async with self._client() as client:
+                response = await client.get(content_url)
+                response.raise_for_status()
+                return response.content
+        except Exception as e:
+            logger.error("❌ 첨부파일 다운로드 실패: %s", str(e))
+            raise RuntimeError(f"첨부파일 다운로드 실패: {str(e)}") from e
+
     async def complete_issue(self, key: str, due_date: str) -> dict[str, str]:
         """
         이슈를 완료 처리합니다.
