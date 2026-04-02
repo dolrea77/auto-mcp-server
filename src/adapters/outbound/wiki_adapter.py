@@ -15,23 +15,31 @@ class WikiAdapter:
         self.user = user
         self.password = password
 
-    async def get_child_pages(self, page_id: str) -> list[WikiPage]:
-        """특정 페이지의 하위 페이지 목록을 조회합니다."""
+    async def get_child_pages(self, page_id: str, limit: int = 50) -> list[WikiPage]:
+        """특정 페이지의 하위 페이지 목록을 페이지네이션으로 전체 조회합니다."""
         url = f"{self.base_url}/rest/api/content/{page_id}/child/page"
         logger.info("🌐 Confluence 하위 페이지 조회: page_id=%s", page_id)
 
-        data = await self._request("GET", url, error_text_limit=200)
-
         pages = []
-        for result in data.get("results", []):
-            page = WikiPage(
-                id=str(result.get("id", "")),
-                title=result.get("title", ""),
-                url=self._build_page_url(result),
-                space_key=result.get("space", {}).get("key", ""),
-            )
-            pages.append(page)
-            logger.info("  - 하위 페이지: [%s] %s", page.id, page.title)
+        start = 0
+        while True:
+            params = {"start": start, "limit": limit}
+            data = await self._request("GET", url, params=params, error_text_limit=200)
+
+            for result in data.get("results", []):
+                page = WikiPage(
+                    id=str(result.get("id", "")),
+                    title=result.get("title", ""),
+                    url=self._build_page_url(result),
+                    space_key=result.get("space", {}).get("key", ""),
+                )
+                pages.append(page)
+                logger.info("  - 하위 페이지: [%s] %s", page.id, page.title)
+
+            size = data.get("size", 0)
+            if size < limit:
+                break
+            start += limit
 
         logger.info("✅ 하위 페이지 조회 완료: %d건", len(pages))
         return pages
