@@ -3,9 +3,9 @@
 Claude Desktop / Claude Code 등 에이전트에서 사용할 수 있는 로컬 MCP(Model Context Protocol) 서버입니다.
 
 **제공 기능:**
-- Jira 이슈 조회/관리 (조회, 상태 전환, 완료 처리, 필터 생성)
+- Jira 이슈 조회/관리 (조회, 상태 전환, 완료 처리, 필터 생성, 첨부파일 내용 추출)
 - Wiki 페이지 자동 생성 (Jira 이슈 정리, 브랜치 커밋 기록, 자유 형식 커스텀 페이지, 멀티프로젝트 병합)
-- Wiki 페이지 조회/수정 (페이지 ID 또는 제목으로 조회, 내용 추가/삭제/수정)
+- Wiki 페이지 조회/수정 (페이지 ID 또는 제목으로 조회, 하위 페이지 목록 조회, 내용 추가/삭제/수정)
 - Git 브랜치 커밋 수집 및 변경사항 분석 (베이스 브랜치 자동 탐지, 스마트 Diff 필터링)
 - 프로젝트별 Jira 설정 외부화 (`JIRA_PROJECT_CONFIGS` 환경변수로 종료일 필드, Wiki 날짜 기준, 커스텀 필드, 상태 목록을 선언적으로 구성)
 - 다이어그램 생성 및 Wiki 첨부 (Mermaid, PlantUML, C4 등 15종 — Kroki + Docker 기반, 선택 기능)
@@ -370,6 +370,7 @@ CLAUDE-*.md
 | | `transition_jira_issue` | 이슈 상태 전환 (임의 상태로) |
 | | `create_jira_filter` | JQL 기반 필터 생성 |
 | **Wiki** | `get_wiki_page` | Wiki 페이지 조회 (페이지 ID 또는 제목으로) |
+| | `get_wiki_child_pages` | Wiki 하위 페이지 목록 조회 |
 | | `update_wiki_page` | Wiki 페이지 수정 (2단계 승인 프로세스) |
 | | `create_wiki_issue_page` | Jira 이슈 정리 Wiki 페이지 생성 (워크플로우 A) |
 | | `create_wiki_page_with_content` | 브랜치/커밋 기반 Wiki 페이지 생성 (워크플로우 B) |
@@ -384,7 +385,7 @@ CLAUDE-*.md
 
 #### Context 사용량
 
-MCP 서버 연결 시 18개 Tool 정의(description + inputSchema)가 에이전트의 context에 로드됩니다.
+MCP 서버 연결 시 19개 Tool 정의(description + inputSchema)가 에이전트의 context에 로드됩니다.
 
 | 항목 | 토큰 수 |
 |---|---|
@@ -412,6 +413,20 @@ Claude에게: "MYPROJECT-2365 이슈 상세정보 알려줘"
 - 클릭 가능한 Jira 링크
 - 전체 설명(Description)
 - `JIRA_PROJECT_CONFIGS`에 등록된 커스텀 필드 값 (설정된 경우)
+- 첨부파일 내용 (아래 표 참고)
+
+**첨부파일 처리:**
+
+이슈에 첨부된 파일을 자동으로 감지하여, 파일 유형에 따라 내용을 추출합니다.
+
+| 분류 | 대상 | 크기 제한 | 반환 방식 |
+|------|------|-----------|-----------|
+| 이미지 | PNG, JPEG, GIF, WebP | 5MB | Base64 `ImageContent`로 반환 — AI가 직접 시각 분석 가능 |
+| 엑셀 | XLSX, XLS | 2MB | 시트별 텍스트 변환 (최대 3시트, 시트당 200행) |
+| 텍스트 | TXT, CSV, JSON, XML, HTML, SVG, LOG 등 | 500KB | UTF-8 텍스트로 디코딩하여 반환 |
+| 기타/대용량 | 위 조건 외 모든 파일 | — | 메타정보 + 다운로드 URL만 제공 |
+
+> 첨부파일 조회 실패 시에도 이슈 본문은 정상 반환됩니다. 개별 파일 처리 실패 시 해당 파일만 메타정보로 폴백합니다.
 
 ---
 
@@ -645,7 +660,28 @@ Claude에게: "페이지 ID 339090255 내용 조회해줘"
 
 ---
 
-#### 2.5 Wiki 페이지 수정 (`update_wiki_page`)
+#### 2.5 Wiki 하위 페이지 조회 (`get_wiki_child_pages`)
+
+특정 페이지의 직계 하위 페이지 목록을 조회합니다. 페이지네이션을 자동 처리하여 전체 목록을 한 번에 반환합니다.
+
+```
+Claude에게: "페이지 ID 24273358의 하위 페이지 목록 보여줘"
+```
+
+**파라미터:**
+- `page_id` (필수): 상위 페이지의 Confluence 페이지 ID
+
+**응답:**
+- 하위 페이지 번호, 페이지 ID, 제목, URL을 마크다운 테이블로 반환
+- 하위 페이지가 없는 경우 안내 메시지 반환
+
+> `WIKI_BASE_URL` 환경 변수만 필요합니다 (`WIKI_ISSUE_ROOT_PAGE_ID` 불필요).
+
+**활용 패턴:** `get_wiki_child_pages`로 하위 페이지 ID를 확인한 뒤, `get_wiki_page`로 내용을 읽거나 `update_wiki_page`로 수정하는 워크플로우에 유용합니다.
+
+---
+
+#### 2.6 Wiki 페이지 수정 (`update_wiki_page`)
 
 기존 Wiki 페이지의 내용을 수정합니다. 2단계 승인 프로세스가 적용됩니다.
 
@@ -677,7 +713,7 @@ Claude에게: "339090255 페이지에서 불필요한 섹션 삭제해줘"
 
 ---
 
-#### 2.6 Wiki 생성/수정 승인 (`approve_wiki_generation`)
+#### 2.7 Wiki 생성/수정 승인 (`approve_wiki_generation`)
 
 ```
 Claude에게: "Wiki 생성 승인해줘"
@@ -695,7 +731,7 @@ Claude에게: "Wiki 생성 승인해줘"
 
 ---
 
-#### 2.7 Wiki 생성 상태 조회 (`get_wiki_generation_status`)
+#### 2.8 Wiki 생성 상태 조회 (`get_wiki_generation_status`)
 
 ```
 Claude에게: "Wiki 생성 세션 상태 확인해줘"
@@ -710,7 +746,7 @@ Claude에게: "Wiki 생성 세션 상태 확인해줘"
 
 ---
 
-#### 2.8 멀티프로젝트 Wiki 병합
+#### 2.9 멀티프로젝트 Wiki 병합
 
 하나의 Jira 이슈가 여러 프로젝트에 걸쳐 수정될 때, 각 프로젝트의 변경사항을 **하나의 Wiki 페이지에 통합**할 수 있습니다.
 
@@ -751,7 +787,7 @@ flowchart TD
 
 ---
 
-#### 2.9 Wiki 템플릿 커스터마이징 (선택)
+#### 2.10 Wiki 템플릿 커스터마이징 (선택)
 
 **템플릿 파일 위치:** `config/wiki_templates.yaml`
 
