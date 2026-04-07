@@ -1145,7 +1145,7 @@ def register_tools(app: Server) -> None:
                 if page_id:
                     page = await adapter.get_page_with_content(page_id)
                 else:
-                    resolved_space = space_key or container.settings.wiki_issue_space_key
+                    resolved_space = space_key or (container.settings.wiki_issue_space_keys[0] if container.settings.wiki_issue_space_keys else "")
                     found = await adapter.search_page_by_title(
                         title=page_title,
                         space_key=resolved_space,
@@ -1209,6 +1209,8 @@ def register_tools(app: Server) -> None:
                 formatted_text += f"| **현재 버전** | {session.update_target_version} |\n"
                 formatted_text += f"| **세션 ID** | {session.session_id} |\n"
                 formatted_text += f"| **현재 상태** | {session.state.value} (승인 대기 중) |\n"
+                if session.custom_space_key:
+                    formatted_text += f"| **Space Key** | {session.custom_space_key} |\n"
 
                 content_preview = session.content_raw[:2000] if session.content_raw else ""
                 truncated = "..." if len(session.content_raw) > 2000 else ""
@@ -1258,8 +1260,7 @@ def register_tools(app: Server) -> None:
                 formatted_text += "|------|------|\n"
                 formatted_text += f"| **페이지 제목** | {page_title} |\n"
                 formatted_text += f"| **부모 페이지** | {parent_info} (ID: {session.parent_page_id}) |\n"
-                if space_key:
-                    formatted_text += f"| **Space Key** | {space_key} |\n"
+                formatted_text += f"| **Space Key** | {session.custom_space_key} |\n"
                 formatted_text += f"| **세션 ID** | {session.session_id} |\n"
                 formatted_text += f"| **현재 상태** | {session.state.value} (승인 대기 중) |\n"
                 # 원본 마크다운 콘텐츠를 프리뷰로 표시 (Claude가 렌더링 가능)
