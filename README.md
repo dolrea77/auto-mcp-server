@@ -73,7 +73,7 @@ vi .env.local  # 또는 원하는 에디터 사용
 | 변수 | 설명 | 확인 방법 |
 |------|------|-----------|
 | `WIKI_BASE_URL` | Confluence 서버 URL | Jira와 같은 서버면 `JIRA_BASE_URL`과 동일 |
-| `WIKI_ISSUE_SPACE_KEY` | Wiki 페이지를 생성할 Space Key | Confluence URL: `display/**SPACEKEY**/...` 부분 |
+| `WIKI_ISSUE_SPACE_KEY` | Wiki Space Key (쉼표 구분으로 여러 공간 지정 가능, 왼쪽 우선순위) | 예: `DEV` 또는 `DEV,OPS,INFRA` |
 | `WIKI_ISSUE_ROOT_PAGE_ID` | Wiki 루트 페이지 ID | 페이지 `...` → `페이지 정보 보기` → URL의 `pageId=값` |
 
 **추가 설정 (선택):**
@@ -628,11 +628,12 @@ Claude에게: "'AI' 페이지 아래에 기술 문서 작성해줘"
 - `parent_page_id` 또는 `parent_page_title` 중 하나
 
 **선택 파라미터:**
-- `space_key`: Confluence Space 키 (생략 시 `WIKI_ISSUE_SPACE_KEY` 기본값 사용)
+- `space_key`: Confluence Space 키 (생략 시 `WIKI_ISSUE_SPACE_KEY`에 등록된 공간을 우선순위 순서대로 검색)
 
 **특징:**
 - 기존 워크플로우(A/B)와 달리 연/월 계층 구조를 사용하지 않음
 - 사용자가 지정한 부모 페이지 바로 아래에 페이지 생성
+- `parent_page_title` 사용 시 여러 공간에서 자동 fallback 검색 (예: DEV에 없으면 OPS에서 검색)
 - 마크다운 형식 지원 (제목, 목록, 코드블록, 볼드, 이탤릭 등)
 - 일반 텍스트도 자동으로 Confluence HTML로 변환
 
@@ -650,7 +651,7 @@ Claude에게: "페이지 ID 339090255 내용 조회해줘"
 **파라미터:**
 - `page_id` (선택): 페이지 ID (직접 조회)
 - `page_title` (선택): 페이지 제목 (Space 내 검색)
-- `space_key` (선택): Confluence Space 키 (생략 시 `WIKI_ISSUE_SPACE_KEY` 기본값)
+- `space_key` (선택): Confluence Space 키 (생략 시 `WIKI_ISSUE_SPACE_KEY`에 등록된 공간을 우선순위 순서대로 검색)
 
 > `page_id`와 `page_title` 중 최소 하나 필수. 둘 다 제공 시 `page_id` 우선.
 
