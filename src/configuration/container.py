@@ -98,7 +98,7 @@ def build_container() -> Container:
     create_wiki_issue_page_use_case = CreateWikiIssuePageUseCase(
         wiki_adapter=wiki_adapter,
         root_page_id=settings.wiki_issue_root_page_id,
-        space_key=settings.wiki_issue_space_key,
+        space_key=settings.wiki_issue_space_keys[0] if settings.wiki_issue_space_keys else "",
         template_renderer=template_renderer,
         diff_collector=diff_collector,
     )
@@ -106,7 +106,7 @@ def build_container() -> Container:
     create_wiki_page_with_content_use_case = CreateWikiPageWithContentUseCase(
         wiki_adapter=wiki_adapter,
         root_page_id=settings.wiki_issue_root_page_id,
-        space_key=settings.wiki_issue_space_key,
+        space_key=settings.wiki_issue_space_keys[0] if settings.wiki_issue_space_keys else "",
         template_renderer=template_renderer,
     )
 
@@ -117,7 +117,7 @@ def build_container() -> Container:
         template_renderer=template_renderer,
         diff_collector=diff_collector,
         root_page_id=settings.wiki_issue_root_page_id,
-        space_key=settings.wiki_issue_space_key,
+        space_keys=settings.wiki_issue_space_keys,
         jira_port=jira_adapter,
         project_configs=settings.jira_project_configs,
     )
