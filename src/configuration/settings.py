@@ -105,7 +105,7 @@ class Settings:
     user_id: str
     user_password: str
     wiki_base_url: str
-    wiki_issue_space_key: str
+    wiki_issue_space_keys: list[str]  # 우선순위 순서의 공간키 배열 (쉼표 구분)
     wiki_issue_root_page_id: str
     template_yaml_path: str
     git_repositories: dict[str, str]  # {프로젝트명: git경로} 매핑
@@ -115,6 +115,13 @@ class Settings:
     kroki_enabled: bool  # 다이어그램 기능 사용 여부
     kroki_url: str  # Kroki 서버 URL
     kroki_container_name: str  # Docker 컨테이너 이름
+
+
+def _parse_space_keys(raw: str) -> list[str]:
+    """쉼표 구분 문자열을 공간키 배열로 파싱. 빈 문자열이면 빈 리스트."""
+    if not raw.strip():
+        return []
+    return [s.strip() for s in raw.split(",") if s.strip()]
 
 
 def build_settings() -> Settings:
@@ -153,7 +160,7 @@ def build_settings() -> Settings:
         user_id=os.environ["USER_ID"],
         user_password=os.environ["USER_PASSWORD"],
         wiki_base_url=os.getenv("WIKI_BASE_URL", ""),
-        wiki_issue_space_key=os.getenv("WIKI_ISSUE_SPACE_KEY", ""),
+        wiki_issue_space_keys=_parse_space_keys(os.getenv("WIKI_ISSUE_SPACE_KEY", "")),
         wiki_issue_root_page_id=os.getenv("WIKI_ISSUE_ROOT_PAGE_ID", ""),
         template_yaml_path=os.getenv("TEMPLATE_YAML_PATH", default_template_path),
         git_repositories=git_repositories,
