@@ -1145,17 +1145,22 @@ def register_tools(app: Server) -> None:
                 if page_id:
                     page = await adapter.get_page_with_content(page_id)
                 else:
-                    resolved_space = space_key or (container.settings.wiki_issue_space_keys[0] if container.settings.wiki_issue_space_keys else "")
-                    found = await adapter.search_page_by_title(
-                        title=page_title,
-                        space_key=resolved_space,
-                    )
+                    search_spaces = [space_key] if space_key else container.settings.wiki_issue_space_keys
+                    found = None
+                    for sk in search_spaces:
+                        found = await adapter.search_page_by_title(
+                            title=page_title,
+                            space_key=sk,
+                        )
+                        if found:
+                            break
                     if found is None:
+                        tried = ", ".join(search_spaces)
                         return [TextContent(
                             type="text",
                             text=f"# ⚠️ 페이지를 찾을 수 없습니다\n\n"
                                  f"**검색 제목:** {page_title}\n"
-                                 f"**Space:** {resolved_space}\n\n"
+                                 f"**검색한 공간:** {tried}\n\n"
                                  f"해당 제목의 페이지가 존재하지 않거나 접근 권한이 없습니다."
                         )]
                     page = await adapter.get_page_with_content(found.id)
