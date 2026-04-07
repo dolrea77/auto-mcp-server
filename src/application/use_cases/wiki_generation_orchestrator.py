@@ -51,7 +51,7 @@ class WikiGenerationOrchestrator:
         template_renderer: TemplateRenderer,
         diff_collector: DiffCollectionPort,
         root_page_id: str,
-        space_key: str,
+        space_keys: list[str],
         jira_port: JiraPort | None = None,
         project_configs: list[JiraProjectConfig] | None = None,
     ):
@@ -60,11 +60,32 @@ class WikiGenerationOrchestrator:
         self._renderer = template_renderer
         self._diff = diff_collector
         self._root_page_id = root_page_id
-        self._space_key = space_key
+        self._space_keys = space_keys
         self._jira = jira_port
         configs = project_configs or []
         self._configs_by_key: dict[str, JiraProjectConfig] = {c.key: c for c in configs}
         self._project_keys: list[str] = [c.key for c in configs]
+
+    async def _resolve_page_across_spaces(
+        self, title: str, space_keys: list[str],
+    ) -> tuple[str, str]:
+        """제목으로 페이지를 space_keys 우선순위 순서대로 검색.
+
+        Returns:
+            (page_id, resolved_space_key)
+
+        Raises:
+            RuntimeError: 모든 공간에서 페이지를 찾지 못한 경우
+        """
+        for sk in space_keys:
+            found = await self._wiki.search_page_by_title(title=title, space_key=sk)
+            if found:
+                logger.info("페이지 '%s' → space=%s, id=%s", title, sk, found.id)
+                return found.id, sk
+        tried = ", ".join(space_keys)
+        raise RuntimeError(
+            f"페이지를 찾을 수 없습니다: '{title}' (검색한 공간: {tried})"
+        )
 
     def _transition(self, session: WikiSession, target: WorkflowState) -> None:
         allowed = _TRANSITIONS.get(session.state, set())
@@ -191,21 +212,14 @@ class WikiGenerationOrchestrator:
         parent_page_id 또는 parent_page_title 중 하나는 반드시 제공해야 합니다.
         space_key 미지정 시 기본 space_key를 사용합니다.
         """
-        resolved_space_key = space_key or self._space_key
+        resolved_space_key = space_key or (self._space_keys[0] if self._space_keys else "")
 
         # 부모 페이지 ID 결정
         if not parent_page_id and parent_page_title:
-            found = await self._wiki.search_page_by_title(
-                title=parent_page_title,
-                space_key=resolved_space_key,
+            search_spaces = [space_key] if space_key else self._space_keys
+            parent_page_id, resolved_space_key = await self._resolve_page_across_spaces(
+                title=parent_page_title, space_keys=search_spaces,
             )
-            if found is None:
-                raise RuntimeError(
-                    f"부모 페이지를 찾을 수 없습니다: '{parent_page_title}' "
-                    f"(space: {resolved_space_key})"
-                )
-            parent_page_id = found.id
-            logger.info("부모 페이지 검색 완료: '%s' → id=%s", parent_page_title, parent_page_id)
 
         if not parent_page_id:
             raise RuntimeError("parent_page_id 또는 parent_page_title 중 하나를 지정해야 합니다")
@@ -233,22 +247,17 @@ class WikiGenerationOrchestrator:
         space_key: str = "",
     ) -> WikiSession:
         """기존 Wiki 페이지 수정 워크플로우 시작: 프리뷰 생성 후 승인 대기"""
-        resolved_space_key = space_key or self._space_key
+        resolved_space_key = space_key or (self._space_keys[0] if self._space_keys else "")
 
         # 페이지 식별
         if page_id:
             page = await self._wiki.get_page_with_content(page_id)
         elif page_title:
-            found = await self._wiki.search_page_by_title(
-                title=page_title,
-                space_key=resolved_space_key,
+            search_spaces = [space_key] if space_key else self._space_keys
+            found_id, resolved_space_key = await self._resolve_page_across_spaces(
+                title=page_title, space_keys=search_spaces,
             )
-            if found is None:
-                raise RuntimeError(
-                    f"페이지를 찾을 수 없습니다: '{page_title}' "
-                    f"(space: {resolved_space_key})"
-                )
-            page = await self._wiki.get_page_with_content(found.id)
+            page = await self._wiki.get_page_with_content(found_id)
         else:
             raise RuntimeError("page_id 또는 page_title 중 하나를 지정해야 합니다")
 
@@ -517,7 +526,7 @@ class WikiGenerationOrchestrator:
         if session.workflow_type == WorkflowType.WORKFLOW_C:
             page_title = session.page_title
             parent_id = session.parent_page_id
-            space = session.custom_space_key or self._space_key
+            space = session.custom_space_key or (self._space_keys[0] if self._space_keys else "")
 
             existing = await self._wiki.find_page_by_title(parent_id, page_title)
             if existing:
@@ -556,7 +565,7 @@ class WikiGenerationOrchestrator:
             root_page_id=self._root_page_id,
             year=year,
             month=month,
-            space_key=self._space_key,
+            space_key=self._space_keys[0] if self._space_keys else "",
             year_title=year_title,
             month_title=month_title,
         )
@@ -578,7 +587,7 @@ class WikiGenerationOrchestrator:
             parent_page_id=month_page_id,
             title=page_title,
             body=session.rendered_preview,
-            space_key=self._space_key,
+            space_key=self._space_keys[0] if self._space_keys else "",
         )
 
         return WikiPageCreationResult(
@@ -657,7 +666,7 @@ class WikiGenerationOrchestrator:
                     title=page_with_content.title,
                     body=merged_body,
                     version=new_version,
-                    space_key=page_with_content.space_key or self._space_key,
+                    space_key=page_with_content.space_key or (self._space_keys[0] if self._space_keys else ""),
                 )
 
                 logger.info(
